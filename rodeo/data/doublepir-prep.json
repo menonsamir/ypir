@@ -1,0 +1,109 @@
+{
+  "scheme": {
+    "family": "simplepir-doublepir",
+    "variant": "doublepir",
+    "authors": "Alexandra Henzinger, Matthew M. Hong, Henry Corrigan-Gibbs, Sarah Meiklejohn, and Vinod Vaikuntanathan",
+    "repo": "https://github.com/ahenzinger/simplepir"
+  },
+  "benchmark": {
+    "benchmarkRepo": "https://github.com/menonsamir/simplepir.git",
+    "benchmarkBranch": "rodeo",
+    "machineName": "AWS:r6i.4xlarge",
+    "coresUsed": 1,
+    "maxMemoryGB": 128,
+    "correctness": false,
+    "repetitions": 1,
+    "warmupIterations": 0,
+    "testInvocation": "python rodeo/benchmark.py [simplepir | doublepir] rodeo/workload.json"
+  },
+  "results": [
+    {
+      "scenario": {
+        "db": {
+          "numItems": 8589934592,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 16777216,
+          "serverTimeMs": 301684,
+          "clientTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 319488,
+          "downloadBytes": 352256,
+          "serverTimeMs": 88,
+          "clientTimeMs": 0
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 17179869184,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 16777216,
+          "serverTimeMs": 0,
+          "clientTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 377856,
+          "downloadBytes": 410624,
+          "serverTimeMs": 181,
+          "clientTimeMs": 0
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 34359738368,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 16777216,
+          "serverTimeMs": 0,
+          "clientTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 494592,
+          "downloadBytes": 527360,
+          "serverTimeMs": 390,
+          "clientTimeMs": 0
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 68719476736,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 16777216,
+          "serverTimeMs": 2832868,
+          "clientTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 741376,
+          "downloadBytes": 774144,
+          "serverTimeMs": 812,
+          "clientTimeMs": 0
+        }
+      }
+    }
+  ]
+}

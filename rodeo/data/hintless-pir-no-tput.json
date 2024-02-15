@@ -1,0 +1,52 @@
+{
+  "scheme": {
+    "family": "hintlesspir",
+    "variant": "hintlesspir"
+  },
+  "results": [
+    {
+      "scenario": {
+        "db": {
+          "numItems": 68719476736,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 0,
+          "clientTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 518000,
+          "downloadBytes": 1610000,
+          "serverTimeMs": 0,
+          "clientTimeMs": 0
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 8589934592,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 0,
+          "clientTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 518000,
+          "downloadBytes": 1613000,
+          "serverTimeMs": 0,
+          "clientTimeMs": 0
+        }
+      }
+    }
+  ]
+}

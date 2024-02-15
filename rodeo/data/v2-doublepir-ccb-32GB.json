@@ -1,0 +1,99 @@
+{
+  "scheme": {
+    "family": "simplepir-doublepir",
+    "variant": "doublepir",
+    "authors": "Alexandra Henzinger, Matthew M. Hong, Henry Corrigan-Gibbs, Sarah Meiklejohn, and Vinod Vaikuntanathan",
+    "repo": "https://github.com/ahenzinger/simplepir"
+  },
+  "benchmark": {
+    "benchmarkRepo": "https://github.com/menonsamir/simplepir.git",
+    "benchmarkBranch": "rodeo",
+    "machineName": "AWS:r6i.4xlarge",
+    "coresUsed": 1,
+    "maxMemoryGB": 128,
+    "correctness": false,
+    "repetitions": 1,
+    "warmupIterations": 0,
+    "testInvocation": "python rodeo/benchmark.py [simplepir | doublepir] rodeo/workload.json"
+  },
+  "results": [
+    {
+      "scenario": {
+        "db": {
+          "numItems": 274877906944,
+          "itemSizeBits": 1
+        },
+        "clients": {
+          "numClients": 2
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 16777216,
+          "serverTimeMs": 0,
+          "clientTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 1482752,
+          "downloadBytes": 1515520,
+          "serverTimeMs": 4227.3924,
+          "clientTimeMs": 0,
+          "stdDevServerTimeMs": 0
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 274877906944,
+          "itemSizeBits": 1
+        },
+        "clients": {
+          "numClients": 4
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 16777216,
+          "serverTimeMs": 0,
+          "clientTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 1482752,
+          "downloadBytes": 1515520,
+          "serverTimeMs": 7507.4114,
+          "clientTimeMs": 0,
+          "stdDevServerTimeMs": 0
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 274877906944,
+          "itemSizeBits": 1
+        },
+        "clients": {
+          "numClients": 8
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 16777216,
+          "serverTimeMs": 0,
+          "clientTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 1482752,
+          "downloadBytes": 1515520,
+          "serverTimeMs": 14579.6968,
+          "clientTimeMs": 0,
+          "stdDevServerTimeMs": 0
+        }
+      }
+    }
+  ]
+}

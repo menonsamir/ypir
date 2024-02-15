@@ -1,0 +1,506 @@
+use log::debug;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha20Rng;
+
+use spiral_rs::aligned_memory::AlignedMemory64;
+use spiral_rs::{
+    arith::*, client::*, discrete_gaussian::*, gadget::*, number_theory::*, params::*, poly::*,
+};
+
+use super::convolution::negacyclic_matrix_u32;
+use super::{noise_analysis::measure_noise_width_squared, scheme::*, util::*};
+
+pub fn rlwe_to_lwe<'a>(params: &'a Params, ct: &PolyMatrixRaw<'a>) -> Vec<u64> {
+    let a = ct.get_poly(0, 0);
+    let mut negacylic_a = negacyclic_matrix(&a, params.modulus);
+    negacylic_a.extend(ct.get_poly(1, 0));
+
+    negacylic_a
+}
+
+pub fn pack_query(params: &Params, query: &[u64]) -> AlignedMemory64 {
+    let query_packed = query
+        .iter()
+        .enumerate()
+        .map(|(_i, x)| {
+            let crt0 = (*x) % params.moduli[0];
+            let crt1 = (*x) % params.moduli[1];
+            crt0 | (crt1 << 32)
+        })
+        .collect::<Vec<_>>();
+    let mut aligned_query_packed = AlignedMemory64::new(query_packed.len());
+    aligned_query_packed
+        .as_mut_slice()
+        .copy_from_slice(&query_packed);
+    aligned_query_packed
+}
+
+pub fn get_reg_sample<'a>(
+    params: &'a Params,
+    sk_reg: &PolyMatrixRaw<'a>,
+    rng: &mut ChaCha20Rng,
+    rng_pub: &mut ChaCha20Rng,
+) -> PolyMatrixNTT<'a> {
+    let a = PolyMatrixRaw::random_rng(params, 1, 1, rng_pub);
+    let e = PolyMatrixRaw::noise(
+        params,
+        1,
+        1,
+        &DiscreteGaussian::init(params.noise_width),
+        rng,
+    );
+    let b_p = &sk_reg.ntt() * &a.ntt();
+    let b = &e.ntt() + &b_p;
+    let mut p = PolyMatrixNTT::zero(params, 2, 1);
+    p.copy_into(&(-&a).ntt(), 0, 0);
+    p.copy_into(&b, 1, 0);
+    p
+}
+
+pub fn get_fresh_reg_public_key<'a>(
+    params: &'a Params,
+    sk_reg: &PolyMatrixRaw<'a>,
+    m: usize,
+    rng: &mut ChaCha20Rng,
+    rng_pub: &mut ChaCha20Rng,
+) -> PolyMatrixNTT<'a> {
+    let mut p = PolyMatrixNTT::zero(params, 2, m);
+
+    for i in 0..m {
+        p.copy_into(&get_reg_sample(params, sk_reg, rng, rng_pub), 0, i);
+    }
+    p
+}
+
+pub fn raw_generate_expansion_params<'a>(
+    params: &'a Params,
+    sk_reg: &PolyMatrixRaw<'a>,
+    num_exp: usize,
+    m_exp: usize,
+    rng: &mut ChaCha20Rng,
+    rng_pub: &mut ChaCha20Rng,
+) -> Vec<PolyMatrixNTT<'a>> {
+    let g_exp = build_gadget(params, 1, m_exp);
+    debug!("using gadget base {}", g_exp.get_poly(0, 1)[0]);
+    let g_exp_ntt = g_exp.ntt();
+    let mut res = Vec::new();
+
+    for i in 0..num_exp {
+        let t = (params.poly_len / (1 << i)) + 1;
+        let tau_sk_reg = automorph_alloc(&sk_reg, t);
+        let prod = &tau_sk_reg.ntt() * &g_exp_ntt;
+
+        // let w_exp_i = client.encrypt_matrix_reg(&prod, rng, rng_pub);
+        let sample = get_fresh_reg_public_key(params, &sk_reg, m_exp, rng, rng_pub);
+        let w_exp_i = &sample + &prod.pad_top(1);
+        res.push(w_exp_i);
+    }
+
+    res
+}
+
+pub fn decrypt_ct_reg_measured<'a>(
+    client: &Client<'a>,
+    params: &'a Params,
+    ct: &PolyMatrixNTT<'a>,
+    coeffs_to_measure: usize,
+) -> PolyMatrixRaw<'a> {
+    let dec_result = client.decrypt_matrix_reg(ct).raw();
+
+    let mut dec_rescaled = PolyMatrixRaw::zero(&params, dec_result.rows, dec_result.cols);
+    for z in 0..dec_rescaled.data.len() {
+        dec_rescaled.data[z] = rescale(dec_result.data[z], params.modulus, params.pt_modulus);
+    }
+
+    // measure noise width
+    let s_2 = measure_noise_width_squared(params, client, ct, &dec_rescaled, coeffs_to_measure);
+    debug!("log2(measured noise): {}", s_2.log2());
+
+    dec_rescaled
+}
+
+pub struct YClient<'a> {
+    inner: &'a mut Client<'a>,
+    params: &'a Params,
+    lwe_client: LWEClient,
+}
+
+#[derive(Clone, Debug)]
+pub struct LWEParams {
+    pub n: usize,
+    pub modulus: u64,
+    pub pt_modulus: u64,
+    pub q2_bits: usize,
+    pub noise_width: f64,
+}
+
+impl Default for LWEParams {
+    fn default() -> Self {
+        Self {
+            n: 1024,
+            modulus: 1u64 << 32,
+            pt_modulus: 256,
+            q2_bits: 28,
+            noise_width: 27.57291103, // 11 * sqrt(2*pi)
+        }
+    }
+}
+
+impl LWEParams {
+    pub fn scale_k(&self) -> u64 {
+        self.modulus / self.pt_modulus
+    }
+}
+
+pub struct LWEClient {
+    lwe_params: LWEParams,
+    sk: Vec<u32>,
+}
+
+impl LWEClient {
+    pub fn new(lwe_params: LWEParams) -> Self {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let dg = DiscreteGaussian::init(lwe_params.noise_width);
+        let sk = (0..lwe_params.n)
+            .map(|_| dg.sample(lwe_params.modulus, &mut rng) as u32)
+            .collect::<Vec<_>>();
+        Self { lwe_params, sk }
+    }
+
+    pub fn get_sk(&self) -> &[u32] {
+        &self.sk
+    }
+
+    pub fn encrypt(&self, rng_pub: &mut ChaCha20Rng, pt: u32) -> Vec<u32> {
+        let dg = DiscreteGaussian::init(self.lwe_params.noise_width);
+        let mut rng = ChaCha20Rng::from_entropy();
+        let e = dg.sample(self.lwe_params.modulus, &mut rng) as u32;
+        let mut ct = Vec::new();
+        let mut sum = 0u32;
+        for i in 0..self.lwe_params.n {
+            let v = rng_pub.sample::<u32, _>(rand::distributions::Standard);
+            ct.push(v);
+            sum = sum.wrapping_add(v.wrapping_mul(self.sk[i]));
+        }
+        // neg_sum = 2^32 - sum (mod 2^32)
+        let neg_sum = sum.wrapping_neg();
+        let b = neg_sum.wrapping_add(pt.wrapping_add(e));
+        ct.push(b);
+
+        ct
+    }
+
+    pub fn encrypt_many(&self, rng_pub: &mut ChaCha20Rng, v_pt: &[u32]) -> Vec<u32> {
+        assert_eq!(v_pt.len(), self.lwe_params.n);
+        let mut rng = ChaCha20Rng::from_entropy();
+        let dg = DiscreteGaussian::init(self.lwe_params.noise_width);
+
+        let mut a = Vec::new();
+        for _ in 0..self.lwe_params.n {
+            let v = rng_pub.sample::<u32, _>(rand::distributions::Standard);
+            a.push(v);
+        }
+
+        let nega_a = negacyclic_matrix_u32(&a);
+        let mut last_row = vec![0u32; self.lwe_params.n];
+
+        // correctness test for convolution
+        // let conv = Convolution::new(self.lwe_params.n);
+        // let a_ntt = conv.ntt(&a);
+        // let sk_ntt = conv.ntt(&self.sk);
+        // let b_ntt = conv.pointwise_mul(&a_ntt, &sk_ntt);
+        // let test_vals = conv.raw(&b_ntt);
+
+        let n = self.lwe_params.n;
+        for col in 0..n {
+            let mut sum = 0u32;
+            for row in 0..n {
+                let idx = row * n + col;
+                sum = sum.wrapping_add(nega_a[idx].wrapping_mul(self.sk[row]));
+            }
+            // assert_eq!(sum, test_vals[col]);
+
+            let e = dg.sample(self.lwe_params.modulus, &mut rng) as u32;
+            let val = sum.wrapping_neg().wrapping_add(v_pt[col].wrapping_add(e));
+            last_row[col] = val;
+        }
+
+        // // neg_sum = 2^32 - sum (mod 2^32)
+        // let neg_sum = sum.wrapping_neg();
+        // let b = neg_sum.wrapping_add(pt.wrapping_add(e));
+        // ct.push(b);
+
+        let ct = [nega_a, last_row].concat();
+        ct
+    }
+
+    pub fn decrypt(&self, ct: &[u32]) -> u32 {
+        let mut sum = 0u32;
+        for i in 0..self.lwe_params.n {
+            let v1 = ct[i];
+            let v2 = self.sk[i];
+            sum = sum.wrapping_add(v1.wrapping_mul(v2));
+        }
+        sum = sum.wrapping_add(ct[self.lwe_params.n]);
+
+        sum
+    }
+}
+
+pub fn get_seed(public_seed_idx: u8) -> [u8; 32] {
+    let mut seed = STATIC_PUBLIC_SEED;
+    seed[0] = public_seed_idx;
+    seed
+}
+
+pub fn generate_matrix_ring(
+    rng_pub: &mut ChaCha20Rng,
+    n: usize,
+    rows: usize,
+    cols: usize,
+) -> Vec<u32> {
+    assert_eq!(rows % n, 0);
+    assert_eq!(cols % n, 0);
+    let rows_outer = rows / n;
+    let cols_outer = cols / n;
+
+    let mut out = vec![0u32; rows * cols];
+    for i in 0..rows_outer {
+        for j in 0..cols_outer {
+            let mut a = vec![0u32; n];
+            for idx in 0..n {
+                a[idx] = rng_pub.sample::<u32, _>(rand::distributions::Standard);
+            }
+
+            let mat = negacyclic_matrix_u32(&a);
+            for k in 0..n {
+                for l in 0..n {
+                    let idx = (i * n + k) * cols + (j * n + l);
+                    out[idx] = mat[k * n + l];
+                }
+            }
+        }
+    }
+
+    out
+}
+
+impl<'a> YClient<'a> {
+    pub fn new(inner: &'a mut Client<'a>, params: &'a Params) -> Self {
+        Self {
+            inner,
+            params,
+            lwe_client: LWEClient::new(LWEParams::default()),
+        }
+    }
+
+    pub fn lwe_client(&self) -> &LWEClient {
+        &self.lwe_client
+    }
+
+    fn rlwes_to_lwes(&self, ct: &[PolyMatrixRaw<'a>]) -> Vec<u64> {
+        let v = ct
+            .iter()
+            .map(|ct| rlwe_to_lwe(self.params, ct))
+            .collect::<Vec<_>>();
+        concat_horizontal(&v, self.params.poly_len + 1, self.params.poly_len)
+    }
+
+    pub fn generate_query_impl(
+        &self,
+        public_seed_idx: u8,
+        dim_log2: usize,
+        packing: bool,
+        index: usize,
+    ) -> Vec<PolyMatrixRaw<'a>> {
+        // let db_cols = 1 << (self.params.db_dim_2 + self.params.poly_len_log2);
+        // let idx_dim1 = index / db_cols;
+
+        let multiply_ct = true;
+
+        let mut rng_pub = ChaCha20Rng::from_seed(get_seed(public_seed_idx));
+
+        // Generate dim1_bits LWE samples under public randomness
+        let mut out = Vec::new();
+
+        let scale_k = self.params.modulus / self.params.pt_modulus;
+
+        for i in 0..(1 << dim_log2) {
+            let mut scalar = PolyMatrixRaw::zero(self.params, 1, 1);
+            let is_nonzero = i == (index / self.params.poly_len);
+
+            if is_nonzero {
+                scalar.data[index % self.params.poly_len] = scale_k;
+            }
+
+            if packing {
+                let factor =
+                    invert_uint_mod(self.params.poly_len as u64, self.params.modulus).unwrap();
+                scalar = scalar_multiply_alloc(
+                    &PolyMatrixRaw::single_value(self.params, factor).ntt(),
+                    &scalar.ntt(),
+                )
+                .raw();
+            }
+
+            // if public_seed_idx == SEED_0 {
+            //     out.push(scalar.pad_top(1));
+            //     continue;
+            // }
+
+            let ct = if multiply_ct {
+                let factor =
+                    invert_uint_mod(self.params.poly_len as u64, self.params.modulus).unwrap();
+
+                self.inner.encrypt_matrix_scaled_reg(
+                    &scalar.ntt(),
+                    &mut ChaCha20Rng::from_entropy(),
+                    &mut rng_pub,
+                    factor,
+                )
+            } else {
+                self.inner.encrypt_matrix_reg(
+                    &scalar.ntt(),
+                    &mut ChaCha20Rng::from_entropy(),
+                    &mut rng_pub,
+                )
+            };
+
+            // let mut ct = self.inner.encrypt_matrix_reg(
+            //     &scalar.ntt(),
+            //     &mut ChaCha20Rng::from_entropy(),
+            //     &mut rng_pub,
+            // );
+
+            // if multiply_ct && packing {
+            //     let factor =
+            //         invert_uint_mod(self.params.poly_len as u64, self.params.modulus).unwrap();
+            //     ct = scalar_multiply_alloc(
+            //         &PolyMatrixRaw::single_value(self.params, factor).ntt(),
+            //         &ct,
+            //     );
+            // };
+
+            // if multiply_error && is_nonzero && packing {
+            //     let factor =
+            //         invert_uint_mod(self.params.poly_len as u64, self.params.modulus).unwrap();
+            //     ct = scalar_multiply_alloc(
+            //         &PolyMatrixRaw::single_value(self.params, factor).ntt(),
+            //         &ct,
+            //     );
+            // }
+
+            let ct_raw = ct.raw();
+            // let ct_0_nega = negacyclic_perm(ct_raw.get_poly(0, 0), 0, self.params.modulus);
+            // let ct_1_nega = negacyclic_perm(ct_raw.get_poly(1, 0), 0, self.params.modulus);
+            // let mut ct_nega = PolyMatrixRaw::zero(self.params, 2, 1);
+            // ct_nega.get_poly_mut(0, 0).copy_from_slice(&ct_0_nega);
+            // ct_nega.get_poly_mut(1, 0).copy_from_slice(&ct_1_nega);
+
+            // self-test
+            // {
+            //     let test_ct = self.inner.encrypt_matrix_reg(
+            //         &PolyMatrixRaw::single_value(self.params, scale_k * 7).ntt(),
+            //         &mut ChaCha20Rng::from_entropy(),
+            //         &mut ChaCha20Rng::from_entropy(),
+            //     );
+            //     let lwe = rlwe_to_lwe(self.params, &test_ct.raw());
+            //     let result = self.decode_response(&lwe);
+            //     assert_eq!(result[0], 7);
+            // }
+
+            out.push(ct_raw);
+        }
+
+        out
+    }
+
+    pub fn generate_query(
+        &self,
+        public_seed_idx: u8,
+        dim_log2: usize,
+        packing: bool,
+        index_row: usize,
+    ) -> Vec<u64> {
+        if public_seed_idx == SEED_0 {
+            let lwe_params = LWEParams::default();
+            let dim = 1 << (dim_log2 + self.params.poly_len_log2);
+
+            // lwes must be (n + 1) x (dim) matrix
+            let mut lwes = vec![0u64; (lwe_params.n + 1) * dim];
+
+            let scale_k = lwe_params.scale_k() as u32;
+            let mut vals_to_encrypt = vec![0u32; dim];
+            vals_to_encrypt[index_row] = scale_k;
+
+            let mut rng_pub = ChaCha20Rng::from_seed(get_seed(public_seed_idx));
+
+            for i in (0..dim).step_by(lwe_params.n) {
+                let out = self
+                    .lwe_client
+                    .encrypt_many(&mut rng_pub, &vals_to_encrypt[i..i + lwe_params.n])
+                    .iter()
+                    .map(|x| *x as u64)
+                    .collect::<Vec<_>>();
+                assert_eq!(out.len(), (lwe_params.n + 1) * lwe_params.n);
+                for r in 0..lwe_params.n + 1 {
+                    for c in 0..lwe_params.n {
+                        lwes[r * dim + i + c] = out[r * lwe_params.n + c];
+                    }
+                }
+            }
+
+            lwes
+        } else {
+            let out = self.generate_query_impl(public_seed_idx, dim_log2, packing, index_row);
+            let lwes = self.rlwes_to_lwes(&out);
+            lwes
+        }
+    }
+
+    pub fn decode_response(&self, response: &[u64]) -> Vec<u64> {
+        debug!("Decoding response: {:?}", &response[..16]);
+        let db_cols = 1 << (self.params.db_dim_2 + self.params.poly_len_log2);
+
+        let sk = self.inner.get_sk_reg().as_slice().to_vec();
+
+        let mut out = Vec::new();
+        for col in 0..db_cols {
+            let mut sum = 0u128;
+            for i in 0..self.params.poly_len {
+                let v1 = response[i * db_cols + col];
+                let v2 = sk[i];
+                sum += v1 as u128 * v2 as u128;
+            }
+
+            sum += response[self.params.poly_len * db_cols + col] as u128;
+
+            let result = (sum % self.params.modulus as u128) as u64;
+            let result_rescaled = rescale(result, self.params.modulus, self.params.pt_modulus);
+            out.push(result_rescaled);
+        }
+
+        out
+    }
+
+    pub fn client(&self) -> &Client<'a> {
+        self.inner
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_lwe() {
+        let lwe_params = LWEParams::default();
+        let client = LWEClient::new(lwe_params.clone());
+        let pt = fastrand::u32(0..lwe_params.pt_modulus as u32);
+        let scaled_pt = pt.wrapping_mul(lwe_params.scale_k() as u32);
+        let ct = client.encrypt(&mut ChaCha20Rng::from_entropy(), scaled_pt);
+        let pt_dec = client.decrypt(&ct);
+        let result = rescale(pt_dec as u64, lwe_params.modulus, lwe_params.pt_modulus) as u32;
+        assert_eq!(result, pt);
+    }
+}

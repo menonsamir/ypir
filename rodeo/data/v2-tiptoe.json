@@ -1,0 +1,100 @@
+{
+  "scheme": {
+    "family": "tiptoe",
+    "variant": "tiptoe",
+    "authors": "Alexandra Henzinger, Matthew M. Hong, Henry Corrigan-Gibbs, Sarah Meiklejohn, and Vinod Vaikuntanathan",
+    "repo": "https://github.com/ahenzinger/underhood"
+  },
+  "results": [
+    {
+      "scenario": {
+        "db": {
+          "numItems": 8589934592,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 649964,
+          "clientTimeMs": 0,
+          "simplepirPrepTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 34252947,
+          "downloadBytes": 2252387,
+          "serverTimeMs": 2468,
+          "uploadHintQueryBytes": 33957928,
+          "downloadHintQueryBytes": 2104748,
+          "hintQueryTimeMs": 2377,
+          "mainQueryTimeMs": 96,
+          "clientQueryGenTimeMs": 0,
+          "clientDecodeTimeMs": 0,
+          "sqrtNBytes": 0,
+          "stdDevServerTimeMs": 3.0643046454294987
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 68719476736,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 5248469,
+          "clientTimeMs": 0,
+          "simplepirPrepTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 34547753,
+          "downloadBytes": 9008258,
+          "serverTimeMs": 9748,
+          "uploadHintQueryBytes": 33957928,
+          "downloadHintQueryBytes": 8418477,
+          "hintQueryTimeMs": 8991,
+          "mainQueryTimeMs": 760,
+          "clientQueryGenTimeMs": 0,
+          "clientDecodeTimeMs": 0,
+          "sqrtNBytes": 0,
+          "stdDevServerTimeMs": 3.023996600527585
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 274877906944,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 24158107,
+          "clientTimeMs": 0,
+          "simplepirPrepTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 35137272,
+          "downloadBytes": 18016141,
+          "serverTimeMs": 21001,
+          "uploadHintQueryBytes": 33957928,
+          "downloadHintQueryBytes": 16836783,
+          "hintQueryTimeMs": 17848,
+          "mainQueryTimeMs": 3178,
+          "clientQueryGenTimeMs": 0,
+          "clientDecodeTimeMs": 0,
+          "sqrtNBytes": 0,
+          "stdDevServerTimeMs": 13.230804752546081
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,152 @@
+{
+  "scheme": {
+    "family": "ypir-zpir",
+    "variant": "ypir"
+  },
+  "benchmark": {
+    "machineName": "AWS:r6i.4xlarge",
+    "coresUsed": 1,
+    "maxMemoryGB": 128,
+    "correctness": false,
+    "repetitions": 1,
+    "warmupIterations": 0,
+    "testInvocation": "python rodeo/benchmark.py ypir rodeo/workload.json rodeo/output.json"
+  },
+  "results": [
+    {
+      "scenario": {
+        "db": {
+          "numItems": 274877906944,
+          "itemSizeBits": 1
+        },
+        "clients": {
+          "numClients": 2
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 663352,
+          "clientTimeMs": 0,
+          "simplepirPrepTimeMs": 647251,
+          "simplepirHintBytes": 469762048,
+          "doublepirHintBytes": 14680064
+        },
+        "online": {
+          "uploadBytes": 2570240,
+          "downloadBytes": 12288,
+          "simplepirQueryBytes": 1048576,
+          "doublepirQueryBytes": 917504,
+          "simplepirRespBytes": 458752,
+          "doublepirRespBytes": 12288,
+          "serverTimeMs": 4852,
+          "clientQueryGenTimeMs": 8312,
+          "clientDecodeTimeMs": 0,
+          "firstPassTimeMs": 3993,
+          "secondPassTimeMs": 111,
+          "ringPackingTimeMs": 697,
+          "sqrtNBytes": 131072,
+          "allServerTimesMs": [
+            4803,
+            4888,
+            4869,
+            4830,
+            4868
+          ],
+          "stdDevServerTimeMs": 30.74150289104292
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 274877906944,
+          "itemSizeBits": 1
+        },
+        "clients": {
+          "numClients": 4
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 664271,
+          "clientTimeMs": 0,
+          "simplepirPrepTimeMs": 647444,
+          "simplepirHintBytes": 469762048,
+          "doublepirHintBytes": 14680064
+        },
+        "online": {
+          "uploadBytes": 2570240,
+          "downloadBytes": 12288,
+          "simplepirQueryBytes": 1048576,
+          "doublepirQueryBytes": 917504,
+          "simplepirRespBytes": 458752,
+          "doublepirRespBytes": 12288,
+          "serverTimeMs": 8827,
+          "clientQueryGenTimeMs": 8206,
+          "clientDecodeTimeMs": 0,
+          "firstPassTimeMs": 7270,
+          "secondPassTimeMs": 220,
+          "ringPackingTimeMs": 1347,
+          "sqrtNBytes": 131072,
+          "allServerTimesMs": [
+            8842,
+            8806,
+            8809,
+            8879,
+            8798
+          ],
+          "stdDevServerTimeMs": 30.11577659632904
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 274877906944,
+          "itemSizeBits": 1
+        },
+        "clients": {
+          "numClients": 8
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 667429,
+          "clientTimeMs": 0,
+          "simplepirPrepTimeMs": 650123,
+          "simplepirHintBytes": 469762048,
+          "doublepirHintBytes": 14680064
+        },
+        "online": {
+          "uploadBytes": 2570240,
+          "downloadBytes": 12288,
+          "simplepirQueryBytes": 1048576,
+          "doublepirQueryBytes": 917504,
+          "simplepirRespBytes": 458752,
+          "doublepirRespBytes": 12288,
+          "serverTimeMs": 18017,
+          "clientQueryGenTimeMs": 8505,
+          "clientDecodeTimeMs": 0,
+          "firstPassTimeMs": 14974,
+          "secondPassTimeMs": 456,
+          "ringPackingTimeMs": 2697,
+          "sqrtNBytes": 131072,
+          "allServerTimesMs": [
+            18136,
+            17959,
+            17968,
+            17934,
+            18090
+          ],
+          "stdDevServerTimeMs": 80.17880019057407
+        }
+      }
+    }
+  ]
+}

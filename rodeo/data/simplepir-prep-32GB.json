@@ -1,0 +1,65 @@
+{
+  "scheme": {
+    "family": "simplepir-doublepir",
+    "variant": "simplepir",
+    "authors": "Alexandra Henzinger, Matthew M. Hong, Henry Corrigan-Gibbs, Sarah Meiklejohn, and Vinod Vaikuntanathan",
+    "repo": "https://github.com/ahenzinger/simplepir"
+  },
+  "benchmark": {
+    "benchmarkRepo": "https://github.com/menonsamir/simplepir.git",
+    "benchmarkBranch": "rodeo",
+    "machineName": "AWS:r6i.4xlarge",
+    "coresUsed": 1,
+    "maxMemoryGB": 128,
+    "correctness": false,
+    "repetitions": 1,
+    "warmupIterations": 0,
+    "testInvocation": "python rodeo/benchmark.py [simplepir | doublepir] rodeo/workload.json"
+  },
+  "results": [
+    {
+      "scenario": {
+        "db": {
+          "numItems": 137438953472,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 536870912,
+          "serverTimeMs": 5045432,
+          "clientTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 524288,
+          "downloadBytes": 1048576,
+          "serverTimeMs": 1643,
+          "clientTimeMs": 0
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 274877906944,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 759246848,
+          "serverTimeMs": 9942252,
+          "clientTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 741376,
+          "downloadBytes": 1482752,
+          "serverTimeMs": 2986,
+          "clientTimeMs": 0
+        }
+      }
+    }
+  ]
+}

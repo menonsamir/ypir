@@ -1,0 +1,14 @@
+{
+  "name": "workload-sct-ccb",
+  "workloads": [
+    {
+      "db": {
+        "numItems": 68719476736,
+        "itemSizeBits": 1
+      },
+      "clients": {
+        "numClients": 4
+      }
+    }
+  ]
+}
