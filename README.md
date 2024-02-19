@@ -1,6 +1,8 @@
 # YPIR
 
-This is an implementation of the [YPIR](#) scheme for single-server private information retrieval.
+This is an implementation of the YPIR scheme for single-server private information retrieval,
+introduced in ["YPIR: High-Throughput Single-Server PIR with Silent Preprocessing"](https://eprint.iacr.org/2024/270).
+This is joint work with [David Wu](https://www.cs.utexas.edu/~dwu4/).
 
 ## Running
 
@@ -130,5 +132,16 @@ uses matrix-vector multiplication routines based on the ones in [ahenzinger/simp
 We also use the [menonsamir/spiral-rs](https://github.com/menonsamir/spiral-rs) library for Spiral to handle RLWE ciphertexts.
 
 ### Citing
+
+```
+@misc{cryptoeprint:2024/270,
+  author = {Samir Jordan Menon and David J. Wu},
+  title = {YPIR: High-Throughput Single-Server PIR with Silent Preprocessing},
+  howpublished = {Cryptology ePrint Archive, Paper 2024/270},
+  year = {2024},
+  note = {\url{https://eprint.iacr.org/2024/270}},
+  url = {https://eprint.iacr.org/2024/270}
+}
+```
 
 (to be updated)
