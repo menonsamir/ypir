@@ -5,8 +5,8 @@ use log::debug;
 use spiral_rs::{arith::rescale, client::Client, params::Params, poly::*};
 
 use super::{
-    client::LWEParams,
-    scheme::{params_for_scenario, GetQPrime},
+    lwe::LWEParams,
+    params::{params_for_scenario, GetQPrime},
 };
 
 /*

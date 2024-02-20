@@ -771,47 +771,82 @@ def ypir_breakdown(data_files_json: list[str], output_type: str):
 
     print(output)
 
-    # all_ys = [ys_ring, ys_second, ys_first]
-    # bottom = np.zeros(len(all_scenarios))
-    # bar_colors = ["yellow", "blue", "red"]
-    # for i in range(len(all_ys)):
-    #     styles = {}  # scheme_styles[scheme] if scheme in scheme_styles else {}
-    #     ax.bar(
-    #         xs,
-    #         np.array(all_ys[i]),
-    #         label=str(i),
-    #         bottom=bottom,
-    #         **styles,
-    #     )
-    #     bottom += all_ys[i]
 
-    # ax.set_xlabel("Database size (GB)")
-    # ax.set_ylabel("Throughput (GB/s)")
+def query_breakdown(data_files_json: list[str], output_type: str):
+    scheme_results, all_scenarios = gather_1_bit_retrieval_data(data_files_json)
 
-    # # save
-    # if output_type == "tex":
-    #     # tikzplotlib.clean_figure()
-    #     # code = tikzplotlib.get_tikz_code()
-    #     # for old, new in replace.items():
-    #     #     code = code.replace(old, new)
-    #     # with open("rodeo/plot.tex", "w") as fh:
-    #     #     fh.write(code)
-    #     output = "Label ring second first\n"
-    #     for scenario in all_scenarios:
-    #         measurement = results[scenario]
-    #         db_size_gb = round(scenario[0] * scenario[1] / (8 * GB_SZ))
-    #         first_pass = measurement["online"]["firstPassTimeMs"] / MS_PER_S
-    #         second_pass = measurement["online"]["secondPassTimeMs"] / MS_PER_S
-    #         ring_packing = measurement["online"]["ringPackingTimeMs"] / MS_PER_S
-    #         output += f"{db_size_gb}  {ring_packing} {second_pass} {first_pass} \n"
+    # plot stacked bar chart
+    fig, ax = plt.subplots()
+    scheme = "ypir"
+    results = scheme_results[scheme]
 
-    #     with open("rodeo/plot.tex", "w") as fh:
-    #         fh.write(output)
-    # elif output_type == "pdf":
-    #     plt.savefig("rodeo/plot.pdf")
-    # else:
-    #     print(f"Unknown output type: {output_type}", file=sys.stderr)
-    #     sys.exit(1)
+    xs = []
+    ys_first = []
+    ys_second = []
+    ys_ring = []
+    for scenario in all_scenarios:
+        if scenario not in results:
+            continue
+        measurement = results[scenario]
+        db_size_gb = scenario[0] * scenario[1] / (8 * GB_SZ)
+        xs.append(db_size_gb)
+
+        # throughput = db_size_gb / (measurement["online"]["serverTimeMs"] / MS_PER_S)
+        # total query size
+        query_size = measurement["online"]["uploadBytes"]
+        simplepir_query_size = measurement["online"]["simplepirQueryBytes"]
+
+        # correction for 7/8 difference in query size computation (conservative):
+        doublepir_query_size = measurement["online"]["doublepirQueryBytes"] * (8 / 7)
+        key_switching_matrices_size = query_size - (
+            simplepir_query_size + doublepir_query_size
+        )
+
+        ys_first.append(simplepir_query_size)
+        ys_second.append(doublepir_query_size)
+        ys_ring.append(key_switching_matrices_size)
+
+    for i in range(len(xs)):
+        xs[i] = math.log2(xs[i])
+
+    disp_width = 20
+    padw = lambda s: pad(s, disp_width)
+
+    output = (
+        padw("{\\bf Database Size}")
+        + " & "
+        + padw("{\\bf SimplePIR}")
+        + " & "
+        + padw("{\\bf DoublePIR}")
+        + " & "
+        + padw("{\\bf Packing}")
+        + " & "
+        + padw("{\\bf Total}")
+        + " \\\\ \\midrule\n"
+    )
+
+    for i in range(len(xs)):
+        db_size_gb = round(all_scenarios[i][0] * all_scenarios[i][1] / (8 * GB_SZ))
+        first_pass = ys_first[i]
+        second_pass = ys_second[i]
+        ring_packing = ys_ring[i]
+        total = first_pass + second_pass + ring_packing
+        output += (
+            padw(f"{db_size_gb}~GB")
+            + " & "
+            + padw(f"{format_bytes(first_pass)} ({first_pass / total * 100:.0f}\\%)")
+            + " & "
+            + padw(f"{format_bytes(second_pass)} ({second_pass / total * 100:.0f}\\%)")
+            + " & "
+            + padw(
+                f"{format_bytes(ring_packing)} ({ring_packing / total * 100:.0f}\\%)"
+            )
+            + " & "
+            + padw(f"{format_bytes(total)}")
+            + " \\\\ \n"
+        )
+
+    print(output)
 
 
 queries_per_week = 10**4 / 500
@@ -1003,6 +1038,7 @@ figures = {
     "table-bit-retrieval": table_1_bit_retrieval,
     "ccb": plot_ccb,
     "ypir-breakdown": ypir_breakdown,
+    "query-breakdown": query_breakdown,
     "ccb-rlwe": plot_ccb_rlwe,
     "sct": plot_sct,
 }
@@ -1053,5 +1089,7 @@ if __name__ == "__main__":
         plot_ccb_rlwe(args.data_files_json, args.output_type)
     elif args.figure == "ypir-breakdown":
         ypir_breakdown(args.data_files_json, args.output_type)
+    elif args.figure == "query-breakdown":
+        query_breakdown(args.data_files_json, args.output_type)
     elif args.figure == "sct":
         plot_sct(args.data_files_json, args.output_type)

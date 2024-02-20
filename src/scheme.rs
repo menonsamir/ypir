@@ -3,130 +3,15 @@ use std::time::Instant;
 use log::debug;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use serde_json::Value;
 
 use spiral_rs::aligned_memory::AlignedMemory64;
-use spiral_rs::{arith::*, client::*, params::*, poly::*};
+use spiral_rs::{client::*, params::*};
 
-use super::{client::*, measurement::*, server::*};
+use super::{client::*, lwe::LWEParams, measurement::*, params::*, server::*};
 
 pub const STATIC_PUBLIC_SEED: [u8; 32] = [0u8; 32];
 pub const SEED_0: u8 = 0;
 pub const SEED_1: u8 = 1;
-
-static DEFAULT_MODULI: [u64; 2] = [268369921u64, 249561089u64];
-const DEF_MOD_STR: &str = "[\"268369921\", \"249561089\"]";
-
-fn ext_params_from_json(json_str: &str) -> Params {
-    let v: Value = serde_json::from_str(json_str).unwrap();
-
-    let n = v["n"].as_u64().unwrap() as usize;
-    let db_dim_1 = v["nu_1"].as_u64().unwrap() as usize;
-    let db_dim_2 = v["nu_2"].as_u64().unwrap() as usize;
-    let instances = v["instances"].as_u64().unwrap_or(1) as usize;
-    let p = v["p"].as_u64().unwrap();
-    let q2_bits = u64::max(v["q2_bits"].as_u64().unwrap(), MIN_Q2_BITS);
-    let t_gsw = v["t_gsw"].as_u64().unwrap() as usize;
-    let t_conv = v["t_conv"].as_u64().unwrap() as usize;
-    let t_exp_left = v["t_exp_left"].as_u64().unwrap() as usize;
-    let t_exp_right = v["t_exp_right"].as_u64().unwrap() as usize;
-    let do_expansion = v.get("direct_upload").is_none();
-
-    let mut db_item_size = v["db_item_size"].as_u64().unwrap_or(0) as usize;
-    if db_item_size == 0 {
-        db_item_size = instances * n * n;
-        db_item_size = db_item_size * 2048 * log2_ceil(p) as usize / 8;
-    }
-
-    let version = v["version"].as_u64().unwrap_or(0) as usize;
-
-    let poly_len = v["poly_len"].as_u64().unwrap_or(2048) as usize;
-    let moduli = v["moduli"]
-        .as_array()
-        .map(|x| {
-            x.as_slice()
-                .iter()
-                .map(|y| {
-                    y.as_u64()
-                        .unwrap_or_else(|| y.as_str().unwrap().parse().unwrap())
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or(DEFAULT_MODULI.to_vec());
-    let noise_width = v["noise_width"].as_f64().unwrap_or(6.4);
-
-    Params::init(
-        poly_len,
-        &moduli,
-        noise_width,
-        n,
-        p,
-        q2_bits,
-        t_conv,
-        t_exp_left,
-        t_exp_right,
-        t_gsw,
-        do_expansion,
-        db_dim_1,
-        db_dim_2,
-        instances,
-        db_item_size,
-        version,
-    )
-}
-
-fn internal_params_for(
-    nu_1: usize,
-    nu_2: usize,
-    p: u64,
-    q2_bits: usize,
-    t_exp_left: usize,
-    moduli: &str,
-) -> Params {
-    ext_params_from_json(&format!(
-        r#"
-        {{
-            "n": 1,
-            "nu_1": {},
-            "nu_2": {},
-            "p": {},
-            "q2_bits": {},
-            "t_gsw": 3,
-            "t_conv": 4,
-            "t_exp_left": {},
-            "t_exp_right": 2,
-            "instances": 1,
-            "db_item_size": 0,
-            "moduli": {},
-            "noise_width": 16.042421
-        }}
-        "#,
-        nu_1, nu_2, p, q2_bits, t_exp_left, moduli
-    ))
-}
-
-pub fn params_for_scenario(num_items: usize, item_size_bits: usize) -> Params {
-    let total_db_bytes = num_items * item_size_bits / 8;
-    let lwe_pt_word_bytes = 1;
-    let num_items = total_db_bytes / lwe_pt_word_bytes;
-    let num_tiles = num_items as f64 / (2048. * 2048.);
-    let num_tiles_usize = num_tiles.ceil() as usize;
-    let num_tiles_log2 = (num_tiles_usize as f64).log2().ceil() as usize;
-
-    let (nu_1, nu_2) = if num_tiles_log2 % 2 == 0 {
-        (num_tiles_log2 / 2, num_tiles_log2 / 2)
-    } else {
-        ((num_tiles_log2 + 1) / 2, (num_tiles_log2 - 1) / 2)
-    };
-
-    debug!("chose nu_1: {}, nu_2: {}", nu_1, nu_2);
-
-    let p = 32768;
-    let q2_bits = 28;
-    let t_exp_left = 3;
-
-    internal_params_for(nu_1, nu_2, p, q2_bits, t_exp_left, DEF_MOD_STR)
-}
 
 pub fn run_ypir<const K: usize>(
     num_items: usize,
@@ -144,7 +29,7 @@ pub fn run_ypir_batched(
     trials: usize,
 ) -> Measurement {
     let params = params_for_scenario(num_items, item_size_bits);
-    match num_clients {
+    let measurement = match num_clients {
         1 => run_ypir_on_params::<1>(params, trials),
         2 => run_ypir_on_params::<2>(params, trials),
         3 => run_ypir_on_params::<3>(params, trials),
@@ -158,7 +43,9 @@ pub fn run_ypir_batched(
         11 => run_ypir_on_params::<11>(params, trials),
         12 => run_ypir_on_params::<12>(params, trials),
         _ => panic!("Unsupported number of clients: {}", num_clients),
-    }
+    };
+    debug!("{:#?}", measurement);
+    measurement
 }
 
 pub trait Sample {
@@ -174,42 +61,6 @@ impl Sample for u8 {
 impl Sample for u16 {
     fn sample() -> Self {
         fastrand::u16(..)
-    }
-}
-
-pub trait GetQPrime {
-    /// The smaller reduced modulus, used on the second row of the encoding
-    fn get_q_prime_1(&self) -> u64;
-
-    /// The larger reduced modulus, used on the first row of the encoding
-    fn get_q_prime_2(&self) -> u64;
-}
-
-impl GetQPrime for Params {
-    fn get_q_prime_1(&self) -> u64 {
-        1 << 20
-    }
-
-    fn get_q_prime_2(&self) -> u64 {
-        if self.q2_bits == self.modulus_log2 {
-            self.modulus
-        } else {
-            Q2_VALUES[self.q2_bits as usize]
-        }
-    }
-}
-
-impl GetQPrime for LWEParams {
-    fn get_q_prime_1(&self) -> u64 {
-        u64::MAX // unsupported
-    }
-
-    fn get_q_prime_2(&self) -> u64 {
-        if self.q2_bits == (self.modulus as f64).log2().ceil() as usize {
-            self.modulus
-        } else {
-            Q2_VALUES[self.q2_bits as usize]
-        }
     }
 }
 
@@ -313,18 +164,13 @@ pub fn run_ypir_on_params<const K: usize>(params: Params, trials: usize) -> Meas
     let offline_values = y_server.perform_offline_precomputation(Some(&mut measurements[0]));
     let offline_server_time_ms = start_offline_comp.elapsed().as_millis();
 
-    measurements[0].offline.server_time_ms = offline_server_time_ms as usize;
-    measurements[0].offline.simplepir_hint_bytes = simplepir_hint_bytes;
-    measurements[0].offline.doublepir_hint_bytes = doublepir_hint_bytes;
-    measurements[0].online.simplepir_resp_bytes = simplepir_resp_bytes;
-    measurements[0].online.doublepir_resp_bytes = doublepir_resp_bytes;
-
     let packed_query_row_sz = params.db_rows_padded();
     // let mut all_queries_packed = AlignedMemory64::new(K * packed_query_row_sz);
 
     for trial in 0..trials + 1 {
         debug!("trial: {}", trial);
         let mut measurement = &mut measurements[trial];
+        measurement.offline.server_time_ms = offline_server_time_ms as usize;
         measurement.offline.simplepir_hint_bytes = simplepir_hint_bytes;
         measurement.offline.doublepir_hint_bytes = doublepir_hint_bytes;
         measurement.online.simplepir_resp_bytes = simplepir_resp_bytes;
@@ -492,13 +338,13 @@ mod test {
     #[test]
     #[ignore]
     fn test_ypir_4gb() {
-        run_ypir_batched(1 << 35, 1, 9, 5);
+        run_ypir_batched(1 << 35, 1, 1, 5);
     }
 
     #[test]
     #[ignore]
     fn test_ypir_8gb() {
-        run_ypir_batched(1 << 36, 1, 8, 5);
+        run_ypir_batched(1 << 36, 1, 1, 5);
     }
 
     #[test]
@@ -516,70 +362,6 @@ mod test {
     #[test]
     #[ignore]
     fn test_batched_4_ypir() {
-        run_ypir_batched(1 << 30, 1, 8, 5);
-    }
-
-    fn pp_poly(params: &Params, poly: &[u64], scale: u64) {
-        let mut vals1: Vec<i64> = (&poly).iter().map(|x| *x as i64).collect();
-        // let mut vals2: Vec<i64> = (&poly[poly.len() / 2..poly.len() / 2 + params.poly_len / 2])
-        //     .iter()
-        //     .map(|x| *x as i64)
-        //     .collect();
-
-        let m = params.modulus as i64;
-        for i in 0..vals1.len() {
-            vals1[i] %= m;
-            if vals1[i] >= (m / 2) {
-                vals1[i] -= m;
-            }
-            vals1[i] /= scale as i64;
-            // if vals2[i] >= m / 2 {
-            //     vals2[i] -= m;
-            // }
-        }
-
-        debug!("m: {}", m);
-        debug!("{:?}", vals1);
-        // debug!("{:?}... |\n{:?}...", vals1, vals2);
-    }
-
-    #[test]
-    fn test_automorph() {
-        let params = params_for_scenario(1 << 30, 1);
-        let mut c0 = PolyMatrixRaw::zero(&params, 1, 1);
-        for i in 0..params.poly_len {
-            c0.data[i] = i as u64;
-        }
-
-        let mut c1 = PolyMatrixRaw::zero(&params, 1, 1);
-        for i in 0..params.poly_len {
-            c1.data[i] = 100000 + i as u64;
-        }
-
-        debug!("init:");
-        pp_poly(&params, c0.as_slice(), 1);
-        pp_poly(&params, c1.as_slice(), 1);
-        debug!("");
-
-        let ell = 1;
-        let t = (1 << ell) + 1;
-        let mut x_to_the = PolyMatrixRaw::zero(&params, 1, 1);
-        x_to_the.data[params.poly_len / 2] = 1;
-        let term_0 = &c0 + &scalar_multiply_alloc(&x_to_the.ntt(), &c1.ntt()).raw();
-        let auot_inp = &c0 + &-(&scalar_multiply_alloc(&x_to_the.ntt(), &c1.ntt()).raw());
-        let term_1 = automorph_alloc(&auot_inp, t);
-        let res = &term_0 + &term_1;
-
-        // pp_poly(&params, res.as_slice(), 1);
-        pp_poly(&params, &res.as_slice()[..10], 2);
-        pp_poly(&params, &res.as_slice()[1024..1024 + 10], 2);
-
-        // for ell in 0..params.poly_len_log2 {
-        //     let t = (1 << ell) + 1;
-        //     let poly_auto = automorph_alloc(&poly, t);
-        //     debug!("poly_auto (ell: {}, t: {}):", ell, t,);
-        //     pp_poly(&params, poly_auto.as_slice());
-        //     debug!("");
-        // }
+        run_ypir_batched(1 << 30, 1, 4, 5);
     }
 }

@@ -9,6 +9,7 @@ use rand_chacha::ChaCha20Rng;
 use spiral_rs::aligned_memory::AlignedMemory64;
 use spiral_rs::{arith::*, client::*, params::*, poly::*};
 
+use crate::convolution::naive_multiply_matrices;
 use crate::measurement::Measurement;
 
 use super::{
@@ -16,9 +17,11 @@ use super::{
     client::*,
     convolution::{negacyclic_perm_u32, Convolution},
     kernel::*,
+    lwe::*,
     matmul::matmul_vec_packed,
     modulus_switch::ModulusSwitch,
     packing::*,
+    params::*,
     scheme::*,
     transpose::*,
     util::*,
@@ -237,30 +240,6 @@ where
         }
     }
 
-    pub fn multiply_with_db_packed(
-        &self,
-        aligned_query_packed: &[u64],
-        query_rows: usize,
-    ) -> AlignedMemory64 {
-        let db_rows = 1 << (self.params.db_dim_1 + self.params.poly_len_log2);
-        let db_cols = 1 << (self.params.db_dim_2 + self.params.poly_len_log2);
-        assert_eq!(aligned_query_packed.len(), query_rows * db_rows);
-        assert_eq!(query_rows, 1);
-
-        let now = Instant::now();
-        let result = fast_dot_product_avx512(
-            self.params,
-            aligned_query_packed,
-            db_rows,
-            &self.db_u16(),
-            db_rows,
-            db_cols,
-        );
-        debug!("Fast dot product in {} us", now.elapsed().as_micros());
-
-        result
-    }
-
     pub fn multiply_batched_with_db_packed<const K: usize>(
         &self,
         aligned_query_packed: &[u64],
@@ -328,30 +307,6 @@ where
         let result = transpose_generic(&result, db_cols, K);
         debug!("Transpose in {} us", t.elapsed().as_micros());
         debug!("Fast dot product in {} us", now.elapsed().as_micros());
-
-        result
-    }
-
-    pub fn multiply_with_db(
-        &self,
-        query: &[u64],
-        query_rows: usize,
-        col_range: Range<usize>,
-    ) -> AlignedMemory64 {
-        let db_rows = 1 << (self.params.db_dim_1 + self.params.poly_len_log2);
-        let db_cols = 1 << (self.params.db_dim_2 + self.params.poly_len_log2);
-        assert_eq!(query.len(), query_rows * db_rows);
-
-        let result = multiply_matrices_raw(
-            self.params,
-            query,
-            query_rows,
-            db_rows,
-            &self.db(),
-            db_rows,
-            db_cols,
-            col_range,
-        );
 
         result
     }
@@ -425,22 +380,6 @@ where
         res
     }
 
-    pub fn answer_hint(&self, public_seed_idx: u8, db_cols_range: Range<usize>) -> AlignedMemory64 {
-        let db_rows = 1 << (self.params.db_dim_1 + self.params.poly_len_log2);
-
-        let mut client = Client::init(&self.params);
-        client.generate_secret_keys();
-        let y_client = YClient::new(&mut client, &self.params);
-        let query = y_client.generate_query(public_seed_idx, self.params.db_dim_1, true, 0);
-        let query_trunc = &query[..self.params.poly_len * db_rows];
-
-        let now = Instant::now();
-        let res = self.multiply_with_db(&query_trunc, self.params.poly_len, db_cols_range);
-        debug!("hint in {} us", now.elapsed().as_micros());
-
-        res
-    }
-
     pub fn generate_pseudorandom_query(&self, public_seed_idx: u8) -> Vec<PolyMatrixNTT<'a>> {
         let mut client = Client::init(&self.params);
         client.generate_secret_keys();
@@ -496,7 +435,7 @@ where
 
         // db is db_cols x db_rows (!!!)
         // hint_0 is n x db_cols
-        let hint_0 = multiply_matrices(
+        let hint_0 = naive_multiply_matrices(
             &psuedorandom_query,
             lwe_params.n,
             db_cols,
@@ -511,26 +450,6 @@ where
     pub fn generate_hint_0_ring(&self) -> Vec<u64> {
         let db_rows = 1 << (self.params.db_dim_1 + self.params.poly_len_log2);
         let db_cols = 1 << (self.params.db_dim_2 + self.params.poly_len_log2);
-
-        // let mut rng_pub = ChaCha20Rng::from_seed(get_seed(SEED_0));
-        // let lwe_params = LWEParams::default();
-
-        // // pseudorandom LWE query is n x db_rows
-        // let psuedorandom_query =
-        //     generate_matrix_ring(&mut rng_pub, lwe_params.n, lwe_params.n, db_cols);
-
-        // // db is db_cols x db_rows (!!!)
-        // // hint_0 is n x db_cols
-        // let hint_0_ref = multiply_matrices(
-        //     &psuedorandom_query,
-        //     lwe_params.n,
-        //     db_cols,
-        //     &self.db(),
-        //     db_rows,
-        //     db_cols,
-        //     true,
-        // );
-        // let hint_0_ref = hint_0_ref.iter().map(|&x| x as u64).collect::<Vec<_>>();
 
         let lwe_params = LWEParams::default();
         let n = lwe_params.n;
@@ -601,15 +520,10 @@ where
             }
         }
 
-        // for col in 0..db_cols {}
-
-        // assert_eq!(&hint_0[..128], &hint_0_ref[..128]);
-
         hint_0
     }
 
     pub fn answer_query(&self, aligned_query_packed: &[u64]) -> AlignedMemory64 {
-        // self.multiply_with_db_packed(aligned_query_packed, 1)
         self.multiply_batched_with_db_packed::<1>(aligned_query_packed, 1)
     }
 
@@ -722,16 +636,6 @@ where
         let prepacked_lwe = prep_pack_many_lwes(&params, &combined, rho);
         let prep_packed_vals =
             prep_pack_many_lwes_packed_vals(&params, &prepacked_lwe, rho, &y_constants);
-
-        // self.offline_vals = Some(Box::new(OfflinePrecomputedValues {
-        //     hint_0,
-        //     hint_1,
-        //     pseudorandom_query_1,
-        //     y_constants,
-        //     smaller_server,
-        //     prep_packed_vals,
-        //     prepacked_lwe,
-        // }));
 
         OfflinePrecomputedValues {
             hint_0,
@@ -951,18 +855,10 @@ where
             // debug!("");
             ring_packing_time_ms += ring_packing.elapsed().as_millis();
 
-            // debug!(
-            //     "Total online time: {} us",
-            //     online_phase.elapsed().as_micros()
-            // );
-            // debug!("");
-
             // packed is blowup_factor ring ct's
             // these encode, contiguously [poly_len + 1, blowup_factor]
             // (and some padding)
             assert_eq!(packed.len(), rho);
-
-            // online_download_bytes = packed_mod_switched.iter().map(|x| x.len()).sum::<usize>();
 
             responses.push(packed_mod_switched);
         }

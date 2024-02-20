@@ -1,12 +1,13 @@
-//! Implements convolutions between two 32-bit integer sequences.
+//! Implements convolutions between two integer sequences.
 
-// Say n is the sequence length.
-// Take FFT of both sequences mod some NTT-friendly
-// modulus that is (2*32 + log n) bits long. Then
-// convolve using standard FFT, multiply pointwise,
-// and take inverse FFT.
+// Say n is the sequence length, and the inputs are mod p and mod q. Take FFT of
+// both sequences mod some NTT-friendly modulus that is (log p + log q + log n)
+// bits long. Then convolve using standard FFT, multiply pointwise, and take
+// inverse FFT.
 
 use spiral_rs::{arith::barrett_coeff_u64, params::Params, poly::*};
+
+use crate::server::ToU64;
 
 static DEFAULT_MODULI: [u64; 2] = [268369921u64, 249561089u64];
 
@@ -149,13 +150,52 @@ pub fn negacyclic_perm_u32(a: &[u32]) -> Vec<u32> {
     res
 }
 
+pub fn naive_multiply_matrices<T: ToU64 + Copy>(
+    a: &[u32],
+    a_rows: usize,
+    a_cols: usize,
+    b_t: &[T], // transposed
+    b_rows: usize,
+    b_cols: usize,
+    is_b_transposd: bool,
+) -> Vec<u32> {
+    // performs wrapping arithmetic
+
+    assert_eq!(a_cols, b_rows);
+
+    // debug!("Multiplying {}x{} by {}x{}", a_rows, a_cols, b_rows, b_cols);
+
+    let mut result = vec![0u32; a_rows * b_cols];
+    for i in 0..a_rows {
+        for j in 0..b_cols {
+            for k in 0..a_cols {
+                let a_idx = i * a_cols + k;
+                let b_idx = if is_b_transposd {
+                    j * b_rows + k // on purpose, since transposed
+                } else {
+                    k * b_cols + j
+                };
+                let res_idx = i * b_cols + j;
+
+                unsafe {
+                    let a_val = *a.get_unchecked(a_idx);
+                    let b_val = (b_t.get_unchecked(b_idx)).to_u64() as u32;
+
+                    result[res_idx] = result[res_idx].wrapping_add(a_val.wrapping_mul(b_val));
+                }
+            }
+        }
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod test {
     use std::time::Instant;
 
     use log::debug;
 
-    use super::super::kernel::multiply_matrices;
     use super::*;
 
     #[test]
@@ -187,7 +227,7 @@ mod test {
         assert_eq!(expected, naive);
 
         let nega_b = negacyclic_matrix_u32(&b);
-        let naive_matmul = multiply_matrices(&a, 1, n, &nega_b, n, n, false);
+        let naive_matmul = naive_multiply_matrices(&a, 1, n, &nega_b, n, n, false);
         assert_eq!(expected, naive_matmul);
     }
 
@@ -201,7 +241,7 @@ mod test {
         b.iter_mut().for_each(|x| *x = fastrand::u32(..256));
 
         let nega_a = negacyclic_matrix_u32(&a);
-        let naive_matmul = multiply_matrices(&nega_a, n, n, &b, n, 1, false);
+        let naive_matmul = naive_multiply_matrices(&nega_a, n, n, &b, n, 1, false);
 
         let nega_perm_a = negacyclic_perm_u32(&a);
 
@@ -236,7 +276,7 @@ mod test {
         assert_eq!(expected, naive);
 
         let nega_b = negacyclic_matrix_u32(&b);
-        let naive_matmul = multiply_matrices(&a, 1, n, &nega_b, n, n, false);
+        let naive_matmul = naive_multiply_matrices(&a, 1, n, &nega_b, n, n, false);
         assert_eq!(expected, naive_matmul);
     }
 }

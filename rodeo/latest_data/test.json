@@ -1,0 +1,57 @@
+{
+  "scheme": {
+    "family": "ypir-zpir",
+    "variant": "ypir"
+  },
+  "benchmark": {
+    "machineName": "AWS:r6i.4xlarge",
+    "coresUsed": 1,
+    "maxMemoryGB": 128,
+    "correctness": false,
+    "repetitions": 1,
+    "warmupIterations": 0,
+    "testInvocation": "python rodeo/benchmark.py ypir rodeo/workload.json rodeo/output.json"
+  },
+  "results": [
+    {
+      "scenario": {
+        "db": {
+          "numItems": 8589934592,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 25731,
+          "clientTimeMs": 0,
+          "simplepirPrepTimeMs": 0,
+          "simplepirHintBytes": 117440512,
+          "doublepirHintBytes": 14680064
+        },
+        "online": {
+          "uploadBytes": 866304,
+          "downloadBytes": 12288,
+          "simplepirRespBytes": 114688,
+          "doublepirRespBytes": 12288,
+          "serverTimeMs": 431,
+          "clientQueryGenTimeMs": 1369,
+          "clientDecodeTimeMs": 0,
+          "firstPassTimeMs": 74,
+          "secondPassTimeMs": 14,
+          "ringPackingTimeMs": 343,
+          "sqrtNBytes": 32768,
+          "allServerTimesMs": [
+            431,
+            430,
+            430,
+            432,
+            430
+          ],
+          "stdDevServerTimeMs": 0.8
+        }
+      }
+    }
+  ]
+}
