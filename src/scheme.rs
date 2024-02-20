@@ -8,9 +8,7 @@ use serde_json::Value;
 use spiral_rs::aligned_memory::AlignedMemory64;
 use spiral_rs::{arith::*, client::*, params::*, poly::*};
 
-use super::{
-    bits::*, client::*, measurement::*, modulus_switch::*, noise_analysis::*, server::*, util::*,
-};
+use super::{client::*, measurement::*, server::*};
 
 pub const STATIC_PUBLIC_SEED: [u8; 32] = [0u8; 32];
 pub const SEED_0: u8 = 0;
@@ -216,9 +214,6 @@ impl GetQPrime for LWEParams {
 }
 
 pub fn run_ypir_on_params<const K: usize>(params: Params, trials: usize) -> Measurement {
-    type SimpleType = u8;
-    type DoubleType = u16;
-
     let lwe_params = LWEParams::default();
 
     let db_rows = 1 << (params.db_dim_1 + params.poly_len_log2);
@@ -226,15 +221,6 @@ pub fn run_ypir_on_params<const K: usize>(params: Params, trials: usize) -> Meas
     let db_cols = 1 << (params.db_dim_2 + params.poly_len_log2);
 
     let sqrt_n_bytes = db_cols * (lwe_params.pt_modulus as f64).log2().floor() as usize / 8;
-
-    // let pt_iter = std::iter::repeat_with(|| {
-    //     if params.pt_modulus == 1 << 16 {
-    //         fastrand::u16(..)
-    //     } else {
-    //         fastrand::u16(..) % (params.pt_modulus as u16)
-    //     }
-    // });
-    // let pt_iter = std::iter::repeat_with(|| fastrand::u8(..));
 
     let mut rng = thread_rng();
 
@@ -244,7 +230,6 @@ pub fn run_ypir_on_params<const K: usize>(params: Params, trials: usize) -> Meas
 
     // LWE reduced moduli
     let lwe_q_prime_bits = lwe_params.q2_bits as usize;
-    let lwe_q_prime = lwe_params.get_q_prime_2();
 
     // The number of bits represented by a plaintext RLWE coefficient
     let pt_bits = (params.pt_modulus as f64).log2().floor() as usize;
@@ -253,12 +238,6 @@ pub fn run_ypir_on_params<const K: usize>(params: Params, trials: usize) -> Meas
     // The factor by which ciphertext values are bigger than plaintext values
     let blowup_factor = lwe_q_prime_bits as f64 / pt_bits as f64;
     debug!("blowup_factor: {}", blowup_factor);
-    // assert!(blowup_factor.ceil() - blowup_factor >= 0.05);
-
-    // The starting index of the final value (the '1' in lwe_params.n + 1)
-    // This is rounded to start on a pt_bits boundary
-    let special_offs = ((lwe_params.n * lwe_q_prime_bits) as f64 / pt_bits as f64).ceil() as usize;
-    let special_bit_offs = special_offs * pt_bits;
 
     let mut smaller_params = params.clone();
     smaller_params.db_dim_1 = params.db_dim_2;
@@ -313,93 +292,39 @@ pub fn run_ypir_on_params<const K: usize>(params: Params, trials: usize) -> Meas
     // --
 
     let now = Instant::now();
-    let pt_iter = std::iter::repeat_with(|| SimpleType::sample());
-    let y_server = YServer::<SimpleType>::new(&params, pt_iter, false, true);
+    let pt_iter = std::iter::repeat_with(|| u8::sample());
+    let y_server = YServer::<u8>::new(&params, pt_iter, false, true);
     debug!("Created server in {} us", now.elapsed().as_micros());
     debug!(
         "Database of {} bytes",
-        y_server.db().len() * std::mem::size_of::<SimpleType>()
+        y_server.db().len() * std::mem::size_of::<u8>()
     );
     assert_eq!(
-        y_server.db().len() * std::mem::size_of::<SimpleType>(),
+        y_server.db().len() * std::mem::size_of::<u8>(),
         db_rows_padded * db_cols * (lwe_params.pt_modulus as f64).log2().ceil() as usize / 8
     );
 
     // ================================================================
     // OFFLINE PHASE
     // ================================================================
+    let mut measurements = vec![Measurement::default(); trials + 1];
+
     let start_offline_comp = Instant::now();
-    let now = Instant::now();
-    // let hint_0 = y_server.answer_hint_ring(SEED_0);
-    // let hint_0 = vec![0u64; lwe_params.n * db_cols];
-    let hint_0: Vec<u64> = y_server.generate_hint_0_ring();
-    // hint_0 is n x db_cols
-    let simplepir_prep_time_ms = now.elapsed().as_millis();
-    debug!("Answered hint (ring) in {} us", now.elapsed().as_micros());
-
-    // compute (most of) the secondary hint
-    let intermediate_cts = [&hint_0[..], &vec![0u64; db_cols]].concat();
-    let intermediate_cts_rescaled = intermediate_cts
-        .iter()
-        .map(|x| rescale(*x, lwe_params.modulus, lwe_q_prime))
-        .collect::<Vec<_>>();
-
-    // split and do a second PIR over intermediate_cts
-    // split into blowup_factor=q/p instances (so that all values are now mod p)
-    // the second PIR is over a database of db_cols x (blowup_factor * (lwe_params.n + 1)) values mod p
-
-    // inp: (lwe_params.n + 1, db_cols)
-    // out: (out_rows >= (lwe_params.n + 1) * blowup_factor, db_cols)
-    //      we are 'stretching' the columns (and padding)
-
-    debug!("Splitting intermediate cts...");
-
-    let smaller_db = split_alloc(
-        &intermediate_cts_rescaled,
-        special_bit_offs,
-        lwe_params.n + 1,
-        db_cols,
-        out_rows,
-        lwe_q_prime_bits,
-        pt_bits,
-    );
-    assert_eq!(smaller_db.len(), db_cols * out_rows);
-
-    debug!("Done splitting intermediate cts.");
-
-    // This is the 'intermediate' db after the first pass of PIR and expansion
-    let smaller_server: YServer<DoubleType> =
-        YServer::<DoubleType>::new(&smaller_params, smaller_db.into_iter(), true, false);
-    debug!("gen'd smaller server.");
-    let mut smaller_server_clone = smaller_server.clone();
-
-    let hint_1 = smaller_server.answer_hint_ring(SEED_1);
-    assert_eq!(hint_1.len(), params.poly_len * out_rows);
-    assert_eq!(hint_1[special_offs], 0);
-    assert_eq!(hint_1[special_offs + 1], 0);
-
-    let mut hint_1_combined = hint_1.clone();
-
-    let pseudorandom_query_1 = smaller_server.generate_pseudorandom_query(SEED_1);
-    let y_constants = generate_y_constants(&params);
-
-    let combined = [&hint_1[..], &vec![0u64; out_rows]].concat();
-    assert_eq!(combined.len(), out_rows * (params.poly_len + 1));
-    let prepacked_lwe = prep_pack_many_lwes(&params, &combined, rho);
-    let prep_packed_vals =
-        prep_pack_many_lwes_packed_vals(&params, &prepacked_lwe, rho, &y_constants);
-    let mut prepacked_lwe_mut = prepacked_lwe.clone();
-
+    let offline_values = y_server.perform_offline_precomputation(Some(&mut measurements[0]));
     let offline_server_time_ms = start_offline_comp.elapsed().as_millis();
+
+    measurements[0].offline.server_time_ms = offline_server_time_ms as usize;
+    measurements[0].offline.simplepir_hint_bytes = simplepir_hint_bytes;
+    measurements[0].offline.doublepir_hint_bytes = doublepir_hint_bytes;
+    measurements[0].online.simplepir_resp_bytes = simplepir_resp_bytes;
+    measurements[0].online.doublepir_resp_bytes = doublepir_resp_bytes;
 
     let packed_query_row_sz = params.db_rows_padded();
     // let mut all_queries_packed = AlignedMemory64::new(K * packed_query_row_sz);
 
-    let mut measurements = Vec::new();
-
     for trial in 0..trials + 1 {
         debug!("trial: {}", trial);
-        let mut measurement = Measurement::default();
+        let mut measurement = &mut measurements[trial];
         measurement.offline.simplepir_hint_bytes = simplepir_hint_bytes;
         measurement.offline.doublepir_hint_bytes = doublepir_hint_bytes;
         measurement.online.simplepir_resp_bytes = simplepir_resp_bytes;
@@ -480,271 +405,30 @@ pub fn run_ypir_on_params<const K: usize>(params: Params, trials: usize) -> Meas
             (&mut chunk_mut[..db_rows]).copy_from_slice(queries[i].2.as_slice());
         }
 
+        let mut offline_values = offline_values.clone();
+
         // ================================================================
         // ONLINE PHASE
         // ================================================================
 
-        debug!("");
-        debug!("=== ONLINE PHASE ===");
-        let mut online_download_bytes = 0;
-
-        let online_phase = Instant::now();
-        let first_pass = Instant::now();
-        let intermediate =
-            y_server.lwe_multiply_batched_with_db_packed::<K>(all_queries_packed.as_slice());
-        let simplepir_resp_bytes = intermediate.len() / K * (lwe_q_prime_bits as usize) / 8;
-        debug!("simplepir_resp_bytes {} bytes", simplepir_resp_bytes);
-        let first_pass_time_ms = first_pass.elapsed().as_millis();
-        debug!("First pass took {} us", first_pass.elapsed().as_micros());
-        debug!("intermediate.len(): {}", intermediate.len());
-        let mut second_pass_time_ms = 0;
-        let mut responses = Vec::new();
-        let mut ring_packing_time_ms = 0;
-        for (intermediate_chunk, (_, _, _, packed_query_col, pack_pub_params)) in
-            intermediate.as_slice().chunks(db_cols).zip(queries.iter())
-        {
-            let second_pass = Instant::now();
-            let intermediate_cts_rescaled = intermediate_chunk
+        let start_online_comp = Instant::now();
+        let response = y_server.perform_online_computation::<K>(
+            &mut offline_values,
+            &all_queries_packed,
+            &queries
                 .iter()
-                .map(|x| rescale(*x as u64, lwe_params.modulus, lwe_q_prime))
-                .collect::<Vec<_>>();
-            assert_eq!(intermediate_cts_rescaled.len(), db_cols);
-            debug!(
-                "intermediate_cts_rescaled[0] = {}",
-                intermediate_cts_rescaled[0]
-            );
-
-            let now = Instant::now();
-            // modify the smaller_server db to include the intermediate values
-            // let mut smaller_server_clone = smaller_server.clone();
-            {
-                // remember, this is stored in 'transposed' form
-                // so it is out_cols x db_cols
-                let smaller_db_mut: &mut [DoubleType] = smaller_server_clone.db_mut();
-                for j in 0..db_cols {
-                    // new value to write into the db
-                    let val = intermediate_cts_rescaled[j];
-
-                    for m in 0..blowup_factor.ceil() as usize {
-                        // index in the transposed db
-                        let out_idx = (special_offs + m) * db_cols + j;
-
-                        // part of the value to write into the db
-                        let val_part =
-                            ((val >> (m * pt_bits)) & ((1 << pt_bits) - 1)) as DoubleType;
-
-                        // assert_eq!(smaller_db_mut[out_idx], DoubleType::default());
-                        smaller_db_mut[out_idx] = val_part;
-                    }
-                }
-            }
-            debug!("load secondary hint {} us", now.elapsed().as_micros());
-
-            let now = Instant::now();
-            {
-                let blowup_factor_ceil = blowup_factor.ceil() as usize;
-
-                let phase = Instant::now();
-                let secondary_hint = smaller_server_clone.multiply_with_db_ring(
-                    &pseudorandom_query_1,
-                    special_offs..special_offs + blowup_factor_ceil,
-                    SEED_1,
-                );
-                debug!(
-                    "multiply_with_db_ring took: {} us",
-                    phase.elapsed().as_micros()
-                );
-                // let phase = Instant::now();
-                // let secondary_hint =
-                //     smaller_server_clone.answer_hint(SEED_1, special_offs..special_offs + blowup_factor_ceil);
-                // debug!(
-                //     "traditional answer_hint took: {} us",
-                //     phase.elapsed().as_micros()
-                // );
-
-                assert_eq!(secondary_hint.len(), params.poly_len * blowup_factor_ceil);
-
-                for i in 0..params.poly_len {
-                    for j in 0..blowup_factor_ceil {
-                        let inp_idx = i * blowup_factor_ceil + j;
-                        let out_idx = i * out_rows + special_offs + j;
-
-                        // assert_eq!(hint_1_combined[out_idx], 0); // we no longer clone for each query, just overwrite
-                        hint_1_combined[out_idx] = secondary_hint[inp_idx];
-                    }
-                }
-            }
-            debug!("compute secondary hint in {} us", now.elapsed().as_micros());
-
-            assert_eq!(hint_1_combined.len(), params.poly_len * out_rows);
-
-            let response: AlignedMemory64 =
-                smaller_server_clone.answer_query(packed_query_col.as_slice());
-
-            second_pass_time_ms += second_pass.elapsed().as_millis();
-            let ring_packing = Instant::now();
-            let now = Instant::now();
-            assert_eq!(response.len(), 1 * out_rows);
-
-            // combined is now (poly_len + 1) * (out_rows)
-            // let combined = [&hint_1_combined[..], response.as_slice()].concat();
-            for j in special_offs..special_offs + blowup_factor.ceil() as usize {
-                let mut rlwe_ct = PolyMatrixRaw::zero(&params, 2, 1);
-
-                // 'a' vector
-                // put this in negacyclic order
-                let mut poly = Vec::new();
-                for k in 0..params.poly_len {
-                    poly.push(hint_1_combined[k * out_rows + j]);
-                }
-                let nega = negacyclic_perm(&poly, 0, params.modulus);
-
-                rlwe_ct.get_poly_mut(0, 0).copy_from_slice(&nega);
-
-                // for k in 0..params.poly_len {
-                //     rlwe_ct.get_poly_mut(0, 0)[k] = nega[k];
-                // }
-
-                let j_within_last = j % params.poly_len;
-                prepacked_lwe_mut.last_mut().unwrap()[j_within_last] = rlwe_ct.ntt();
-            }
-            debug!("in between: {} us", now.elapsed().as_micros());
-
-            let packed = pack_many_lwes(
-                &params,
-                &prepacked_lwe_mut,
-                &prep_packed_vals,
-                response.as_slice(),
-                rho,
-                &pack_pub_params,
-                &y_constants,
-            );
-            let now = Instant::now();
-            let mut packed_mod_switched = Vec::with_capacity(packed.len());
-            for ct in packed.iter() {
-                let res = ct.raw();
-                let res_switched = res.switch(rlwe_q_prime_1, rlwe_q_prime_2);
-                packed_mod_switched.push(res_switched);
-            }
-            debug!("switching: {} us", now.elapsed().as_micros());
-            // debug!("Preprocessing pack in {} us", now.elapsed().as_micros());
-            // debug!("");
-            ring_packing_time_ms += ring_packing.elapsed().as_millis();
-
-            // debug!(
-            //     "Total online time: {} us",
-            //     online_phase.elapsed().as_micros()
-            // );
-            // debug!("");
-
-            // packed is blowup_factor ring ct's
-            // these encode, contiguously [poly_len + 1, blowup_factor]
-            // (and some padding)
-            assert_eq!(packed.len(), rho);
-
-            online_download_bytes = packed_mod_switched.iter().map(|x| x.len()).sum::<usize>();
-
-            responses.push(packed_mod_switched);
-        }
-        let online_server_time_ms = online_phase.elapsed().as_millis();
-        debug!(
-            "Total online time: {} us",
-            online_phase.elapsed().as_micros()
+                .map(|x| (x.3.as_slice(), x.4.as_slice()))
+                .collect::<Vec<_>>(),
+            Some(&mut measurement),
         );
-        debug!("");
+        let online_server_time_ms = start_online_comp.elapsed().as_millis();
 
-        for (response_switched, (y_client, target_idx, _, _, _)) in
-            responses.iter().zip(queries.iter())
-        {
-            let (target_row, target_col) = (target_idx / db_cols, target_idx % db_cols);
-            let corr_result = y_server.get_elem(target_row, target_col).to_u64();
+        let online_download_bytes = get_size_bytes(&response);
 
-            let scheme_params = YPIRSchemeParams::from_params(&params, &lwe_params);
-            let log2_corr_err = scheme_params.delta().log2();
-            let log2_expected_outer_noise = scheme_params.expected_outer_noise().log2();
-            debug!("log2_correctness_err: {}", log2_corr_err);
-            debug!("log2_expected_outer_noise: {}", log2_expected_outer_noise);
-
-            let start_decode = Instant::now();
-
-            debug!("rescaling response...");
-            let mut response = Vec::new();
-            for ct_bytes in response_switched.iter() {
-                let ct = PolyMatrixRaw::recover(&params, rlwe_q_prime_1, rlwe_q_prime_2, ct_bytes);
-                response.push(ct);
-            }
-
-            debug!("decrypting outer cts...");
-            let outer_ct = response
-                .iter()
-                .flat_map(|ct| {
-                    decrypt_ct_reg_measured(y_client.client(), &params, &ct.ntt(), params.poly_len)
-                        .as_slice()
-                        .to_vec()
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(outer_ct.len(), out_rows);
-            // debug!("outer_ct: {:?}", &outer_ct[..]);
-            let outer_ct_t_u8 = u64s_to_contiguous_bytes(&outer_ct, pt_bits);
-
-            let mut inner_ct = PolyMatrixRaw::zero(&params, 2, 1);
-            let mut bit_offs = 0;
-            for z in 0..lwe_params.n {
-                let val = read_bits(&outer_ct_t_u8, bit_offs, lwe_q_prime_bits);
-                bit_offs += lwe_q_prime_bits;
-                assert!(
-                    val < lwe_q_prime,
-                    "val: {}, lwe_q_prime: {}",
-                    val,
-                    lwe_q_prime
-                );
-                inner_ct.data[z] = rescale(val, lwe_q_prime, lwe_params.modulus);
-            }
-
-            let mut val = 0;
-            for i in 0..blowup_factor.ceil() as usize {
-                val |= outer_ct[special_offs + i] << (i * pt_bits);
-            }
-            assert!(
-                val < lwe_q_prime,
-                "val: {}, lwe_q_prime: {}",
-                val,
-                lwe_q_prime
-            );
-            debug!("got b_val of: {}", val);
-            inner_ct.data[lwe_params.n] = rescale(val, lwe_q_prime, lwe_params.modulus);
-
-            debug!("decrypting inner ct...");
-            // let plaintext = decrypt_ct_reg_measured(y_client.client(), &params, &inner_ct.ntt(), 1);
-            // let final_result = plaintext.data[0];
-            let inner_ct_as_u32 = inner_ct
-                .as_slice()
-                .iter()
-                .take(lwe_params.n + 1)
-                .map(|x| *x as u32)
-                .collect::<Vec<_>>();
-            let decrypted = y_client.lwe_client().decrypt(&inner_ct_as_u32);
-            let final_result = rescale(decrypted as u64, lwe_params.modulus, lwe_params.pt_modulus);
-
-            measurement.online.client_decode_time_ms = start_decode.elapsed().as_millis() as usize;
-
-            debug!("got {}, expected {}", final_result, corr_result);
-            // debug!("was correct? {}", final_result == corr_result);
-            assert_eq!(final_result, corr_result);
-        }
-
-        measurement.offline.server_time_ms = offline_server_time_ms as usize;
-        measurement.offline.simplepir_prep_time_ms = simplepir_prep_time_ms as usize;
         measurement.online.upload_bytes = online_upload_bytes;
         measurement.online.download_bytes = online_download_bytes;
         measurement.online.server_time_ms = online_server_time_ms as usize;
-        measurement.online.first_pass_time_ms = first_pass_time_ms as usize;
-        measurement.online.second_pass_time_ms = second_pass_time_ms as usize;
-        measurement.online.ring_packing_time_ms = ring_packing_time_ms as usize;
         measurement.online.sqrt_n_bytes = sqrt_n_bytes;
-        measurement.online.simplepir_resp_bytes = simplepir_resp_bytes;
-
-        measurements.push(measurement);
     }
 
     // discard the first measurement (if there were multiple trials)
@@ -786,6 +470,7 @@ fn std_dev(xs: &[usize]) -> f64 {
 #[cfg(test)]
 mod test {
     use super::*;
+    use test_log::test;
 
     #[test]
     fn test_ypir() {
@@ -795,7 +480,7 @@ mod test {
     #[test]
     #[ignore]
     fn test_ypir_1gb() {
-        run_ypir_batched(1 << 33, 1, 8, 5);
+        run_ypir_batched(1 << 33, 1, 1, 5);
     }
 
     #[test]

@@ -8,6 +8,7 @@ pub mod matmul;
 pub mod measurement;
 pub mod modulus_switch;
 pub mod noise_analysis;
+pub mod packing;
 pub mod scheme;
 pub mod server;
 pub mod transpose;

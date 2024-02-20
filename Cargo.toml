@@ -16,6 +16,7 @@ fastrand = "2.0.0"
 log = "0.4.20"
 env_logger = "0.11.1"
 clap = { version = "4.5.0", features = ["derive"] }
+test-log = "0.2.14"
 
 # [profile.release]
 # lto = "fat"

@@ -1,4 +1,4 @@
-use spiral_rs::{arith::barrett_reduction_u128, params::Params, poly::*, util};
+use spiral_rs::{arith::*, params::*, poly::*, util};
 
 use super::server::ToU64;
 
@@ -44,6 +44,75 @@ pub fn get_negacylic<'a>(poly: &PolyMatrixRaw<'a>) -> PolyMatrixRaw<'a> {
     }
 
     out
+}
+
+pub fn reduce_copy(params: &Params, out: &mut [u64], inp: &[u64]) {
+    for n in 0..params.crt_count {
+        for z in 0..params.poly_len {
+            out[n * params.poly_len + z] = barrett_coeff_u64(params, inp[z], n);
+        }
+    }
+}
+
+pub fn add_into_no_reduce(res: &mut PolyMatrixNTT, a: &PolyMatrixNTT) {
+    assert!(res.rows == a.rows);
+    assert!(res.cols == a.cols);
+
+    let params = res.params;
+    for i in 0..res.rows {
+        for j in 0..res.cols {
+            let res_poly = res.get_poly_mut(i, j);
+            let pol2 = a.get_poly(i, j);
+            for z in 0..params.crt_count * params.poly_len {
+                res_poly[z] += pol2[z];
+            }
+        }
+    }
+}
+
+pub fn add_into_at_no_reduce(
+    res: &mut PolyMatrixNTT,
+    a: &PolyMatrixNTT,
+    t_row: usize,
+    t_col: usize,
+) {
+    let params = res.params;
+    for i in 0..a.rows {
+        for j in 0..a.cols {
+            let res_poly = res.get_poly_mut(t_row + i, t_col + j);
+            let pol2 = a.get_poly(i, j);
+            for z in 0..params.crt_count * params.poly_len {
+                res_poly[z] += pol2[z];
+            }
+        }
+    }
+}
+
+pub fn modular_reduce_poly<'a>(a: &mut PolyMatrixNTT<'a>) {
+    let params = a.params;
+    for i in 0..a.rows {
+        for j in 0..a.cols {
+            let pol = a.get_poly_mut(i, j);
+            for z in 0..params.crt_count * params.poly_len {
+                pol[z] = barrett_coeff_u64(params, pol[z], z / params.poly_len);
+            }
+        }
+    }
+}
+
+pub fn scalar_multiply_avx(res: &mut PolyMatrixNTT, a: &PolyMatrixNTT, b: &PolyMatrixNTT) {
+    assert_eq!(a.rows, 1);
+    assert_eq!(a.cols, 1);
+
+    let params = res.params;
+    let pol2 = a.get_poly(0, 0);
+    for i in 0..b.rows {
+        for j in 0..b.cols {
+            let res_poly = res.get_poly_mut(i, j);
+            let pol1 = b.get_poly(i, j);
+            multiply_poly_avx(params, res_poly, pol1, pol2);
+        }
+    }
 }
 
 pub fn concat_horizontal(v_a: &[Vec<u64>], a_rows: usize, a_cols: usize) -> Vec<u64> {
