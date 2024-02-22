@@ -382,6 +382,10 @@ def table_1_bit_retrieval(args, data_files_json: list[str], output_type: str):
         ]
         # schemes = ["simplepir*", "doublepir*", "ypir"]
         # nice_schemes = ["SimplePIR*", "DoublePIR*", "YPIR"]
+    if args.ypir_only:
+        schemes = ["ypir"]
+        nice_schemes = ["YPIR"]
+
     db_scenarios = {
         "1 GB": (8589934592, 1),
         "8 GB": (68719476736, 1),
@@ -1070,6 +1074,12 @@ def parse_args():
         "--star-variants",
         action="store_true",
         help="Use simplepir* and doublepir* variants instead of simplepir and doublepir",
+    )
+    # add flag for ypir only
+    parser.add_argument(
+        "--ypir-only",
+        action="store_true",
+        help="Plot only the results for YPIR",
     )
     return parser.parse_args()
 
