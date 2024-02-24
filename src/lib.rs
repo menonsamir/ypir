@@ -3,6 +3,7 @@
 pub mod bits;
 pub mod client;
 pub mod convolution;
+pub mod faster_packing;
 pub mod kernel;
 pub mod lwe;
 pub mod matmul;
