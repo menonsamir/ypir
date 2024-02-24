@@ -509,3 +509,85 @@ pub fn pack_many_lwes<'a>(
 
     res
 }
+
+#[cfg(test)]
+mod test {
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+    use spiral_rs::{client::Client, number_theory::invert_uint_mod, util::get_test_params};
+
+    use crate::{client::raw_generate_expansion_params, server::generate_y_constants};
+
+    use super::*;
+
+    #[test]
+    fn test_packing() {
+        let params = get_test_params();
+        let mut client = Client::init(&params);
+        client.generate_secret_keys();
+        let y_constants = generate_y_constants(&params);
+
+        let pack_pub_params = raw_generate_expansion_params(
+            &params,
+            client.get_sk_reg(),
+            params.poly_len_log2,
+            params.t_exp_left,
+            &mut ChaCha20Rng::from_entropy(),
+            &mut ChaCha20Rng::from_entropy(),
+        );
+
+        // generate poly_len ciphertexts
+        let mut v_ct = Vec::new();
+        let mut b_values = Vec::new();
+        for i in 0..params.poly_len {
+            let mut pt = PolyMatrixRaw::zero(&params, 1, 1);
+            let val = i as u64 % params.pt_modulus;
+            let scale_k = params.modulus / params.pt_modulus;
+            let mod_inv = invert_uint_mod(params.poly_len as u64, params.modulus).unwrap();
+            let val_to_enc = multiply_uint_mod(val * scale_k, mod_inv, params.modulus);
+            pt.data[0] = val_to_enc;
+            let ct = client.encrypt_matrix_reg(
+                &pt.ntt(),
+                &mut ChaCha20Rng::from_entropy(),
+                &mut ChaCha20Rng::from_entropy(),
+            );
+            let mut ct_raw = ct.raw();
+
+            // get the b value
+            b_values.push(ct_raw.get_poly(1, 0)[0]);
+
+            // zero out all of the second poly
+            ct_raw.get_poly_mut(1, 0).fill(0);
+            v_ct.push(ct_raw.ntt());
+        }
+
+        let now = Instant::now();
+        let packed = pack_lwes(
+            &params,
+            &b_values,
+            &v_ct,
+            &[],
+            params.poly_len,
+            &pack_pub_params,
+            &y_constants,
+        );
+        println!("Packing took {} us", now.elapsed().as_micros());
+
+        // decrypt + decode
+        let dec = client.decrypt_matrix_reg(&packed);
+        let dec_raw = dec.raw();
+
+        // rescale
+        let mut rescaled = PolyMatrixRaw::zero(&params, 1, 1);
+        for i in 0..params.poly_len {
+            rescaled.data[i] = rescale(dec_raw.data[i], params.modulus, params.pt_modulus);
+        }
+
+        println!("rescaled: {:?}", &rescaled.as_slice()[..50]);
+        let mut gold = PolyMatrixRaw::zero(&params, 1, 1);
+        for i in 0..params.poly_len {
+            gold.data[i] = i as u64 % params.pt_modulus;
+        }
+        assert_eq!(rescaled.as_slice(), gold.as_slice());
+    }
+}
