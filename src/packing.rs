@@ -274,10 +274,10 @@ pub fn precompute_pack<'a>(
     params: &'a Params,
     ell: usize,
     rlwe_cts: &[PolyMatrixNTT<'a>],
-    pub_params: &[PolyMatrixNTT<'a>],
+    fake_pub_params: &[PolyMatrixNTT<'a>],
     y_constants: &(Vec<PolyMatrixNTT<'a>>, Vec<PolyMatrixNTT<'a>>),
-) -> (PolyMatrixNTT<'a>, Vec<PolyMatrixNTT<'a>>) {
-    assert!(pub_params.len() == params.poly_len_log2);
+) -> (PolyMatrixNTT<'a>, Vec<PolyMatrixNTT<'a>>, Vec<Vec<usize>>) {
+    assert!(fake_pub_params.len() == params.poly_len_log2);
     assert_eq!(params.crt_count, 2);
 
     let mut working_set = rlwe_cts.to_vec();
@@ -382,7 +382,7 @@ pub fn precompute_pack<'a>(
 
                 res.push(cur_ginv_ct_ntt.clone());
 
-                let pub_param = &pub_params[params.poly_len_log2 - 1 - (cur_ell - 1)];
+                let pub_param = &fake_pub_params[params.poly_len_log2 - 1 - (cur_ell - 1)];
                 // let ginv_ct_ntt = ginv_ct.ntt();
                 // let w_times_ginv_ct = pub_param * &ginv_ct_ntt;
                 w_times_ginv_ct.as_mut_slice().fill(0);
@@ -406,7 +406,9 @@ pub fn precompute_pack<'a>(
         debug!("total_4: {} us", total_4);
     }
 
-    (working_set[0].clone(), res)
+    let tables = generate_automorph_tables_brute_force(&params);
+
+    (working_set[0].clone(), res, tables)
 }
 
 // pub fn client_precomp_w<'a>(
@@ -424,20 +426,23 @@ pub fn pack_using_precomp_vals<'a>(
     b_values: &[u64],
     precomp_res: &PolyMatrixNTT<'a>,
     precomp_vals: &[PolyMatrixNTT<'a>],
+    precomp_tables: &[Vec<usize>],
     y_constants: &(Vec<PolyMatrixNTT<'a>>, Vec<PolyMatrixNTT<'a>>),
 ) -> PolyMatrixNTT<'a> {
-    let mut working_set = vec![PolyMatrixNTT::zero(params, 2, 1); 1 << ell];
+    let mut working_set = vec![PolyMatrixNTT::zero(params, 1, 1); 1 << ell];
 
-    let mut y_times_ct_odd = PolyMatrixNTT::zero(params, 2, 1);
-    let mut neg_y_times_ct_odd = PolyMatrixNTT::zero(params, 2, 1);
-    let mut ct_sum_1 = PolyMatrixNTT::zero(params, 2, 1);
+    let mut y_times_ct_odd = PolyMatrixNTT::zero(params, 1, 1);
+    let mut neg_y_times_ct_odd = PolyMatrixNTT::zero(params, 1, 1);
+    let mut ct_sum_1 = PolyMatrixNTT::zero(params, 1, 1);
+    let mut w_times_ginv_ct = PolyMatrixNTT::zero(params, 1, 1);
 
-    let mut ct_raw = PolyMatrixRaw::zero(params, 1, 1);
-    let mut ct_auto_1_ntt = PolyMatrixNTT::zero(params, 1, 1);
-    let mut scratch = PolyMatrixNTT::zero(params, 2, 1);
-    let scratch_mut_slc = scratch.as_mut_slice();
+    // let tables:  = generate_automorph_tables_brute_force(&params); // TODO: move out
 
-    let tables = generate_automorph_tables_brute_force(&params); // TODO: move out
+    let mut time_0 = 0;
+    let mut time_1 = 0;
+    let mut time_2 = 0;
+    let mut time_3 = 0;
+    let mut time_4 = 0;
 
     let mut idx_precomp = 0;
     for cur_ell in 1..=ell {
@@ -452,48 +457,57 @@ pub fn pack_using_precomp_vals<'a>(
 
             let (y, neg_y) = (&y_constants.0[cur_ell - 1], &y_constants.1[cur_ell - 1]);
 
+            let now = Instant::now();
+
             scalar_multiply_avx(&mut y_times_ct_odd, &y, &ct_odd);
             scalar_multiply_avx(&mut neg_y_times_ct_odd, &neg_y, &ct_odd);
 
+            time_0 += now.elapsed().as_micros();
+
+            let now = Instant::now();
             ct_sum_1.as_mut_slice().copy_from_slice(ct_even.as_slice());
-            add_into(&mut ct_sum_1, &neg_y_times_ct_odd);
+            add_into_no_reduce(&mut ct_sum_1, &neg_y_times_ct_odd);
             add_into_no_reduce(ct_even, &y_times_ct_odd);
+            time_1 += now.elapsed().as_micros();
 
             // --
 
             let ct: &PolyMatrixNTT<'_> = &ct_sum_1;
-            let ct_row_1 = ct.submatrix(1, 0, 1, 1);
-
             let t = (1 << cur_ell) + 1;
-            let t_exp = params.t_exp_left;
-
-            // nb: scratch has 2nd row of ct in uncrtd form,
-            //     ct_raw has only first row
-            // from_ntt_scratch(&mut ct_raw, scratch_mut_slc, ct);
 
             let cur_ginv_ct_ntt = &precomp_vals[idx_precomp];
             idx_precomp += 1;
 
-            let pub_param = &pub_params[params.poly_len_log2 - 1 - (cur_ell - 1)];
-            let w_times_ginv_ct = pub_param * cur_ginv_ct_ntt;
+            let now = Instant::now();
+            let w = &pub_params[params.poly_len_log2 - 1 - (cur_ell - 1)];
+            // let w = pub_param.submatrix(1, 0, 1, pub_param.cols);
+            // let w_times_ginv_ct = &w * cur_ginv_ct_ntt;
+            // multiply(&mut w_times_ginv_ct, &w, &cur_ginv_ct_ntt);
+            w_times_ginv_ct.as_mut_slice().fill(0);
+            multiply_no_reduce(&mut w_times_ginv_ct, &w, &cur_ginv_ct_ntt, 0);
+            time_2 += now.elapsed().as_micros();
 
-            // automorph_poly_uncrtd(params, ct_auto_1_ntt.as_mut_slice(), scratch_mut_slc, t);
-            let ct_auto_1_ntt = apply_automorph_ntt(params, &tables, &ct_row_1, t);
-            // ntt_forward(params, ct_auto_1_ntt.as_mut_slice());
+            let now = Instant::now();
+            let ct_auto_1_ntt = apply_automorph_ntt(params, &precomp_tables, &ct, t);
+            time_3 += now.elapsed().as_micros();
 
-            // zero out first row
-            // for col in 0..w_times_ginv_ct.cols {
-            //     w_times_ginv_ct.get_poly_mut(0, col).fill(0);
-            // }
-
-            add_into_at_no_reduce(ct_even, &ct_auto_1_ntt, 1, 0);
+            let now = Instant::now();
+            add_into_at_no_reduce(ct_even, &ct_auto_1_ntt, 0, 0);
             add_into(ct_even, &w_times_ginv_ct);
+            time_4 += now.elapsed().as_micros();
         }
     }
 
-    assert_eq!(idx_precomp, precomp_vals.len());
+    println!("time_0: {} us", time_0);
+    println!("time_1: {} us", time_1);
+    println!("time_2: {} us", time_2);
+    println!("time_3: {} us", time_3);
+    println!("time_4: {} us", time_4);
 
-    let resulting_row_1 = &working_set[0].get_poly(1, 0).to_vec();
+    assert_eq!(idx_precomp, precomp_vals.len());
+    println!("idx_precomp: {}", idx_precomp);
+
+    let resulting_row_1 = &working_set[0].get_poly(0, 0).to_vec();
 
     let mut res = precomp_res.clone();
     // {
@@ -503,21 +517,25 @@ pub fn pack_using_precomp_vals<'a>(
     // }
     res.get_poly_mut(1, 0).copy_from_slice(resulting_row_1);
 
-    println!(
-        "precomp_res     row 1: {:?}",
-        &precomp_res.raw().get_poly(1, 0)[..30]
-    );
-    println!(
-        "resulting_row_1 row 1: {:?}",
-        &working_set[0].raw().get_poly(1, 0)[..30]
-    );
+    // println!(
+    //     "precomp_res     row 1: {:?}",
+    //     &precomp_res.raw().get_poly(1, 0)[..30]
+    // );
+    // println!(
+    //     "resulting_row_1 row 1: {:?}",
+    //     &working_set[0].raw().get_poly(1, 0)[..30]
+    // );
 
     // let mut res = precomp_res.clone();
 
     let mut out_raw = res.raw();
     for z in 0..params.poly_len {
         let val = barrett_reduction_u128(params, b_values[z] as u128 * params.poly_len as u128);
-        out_raw.get_poly_mut(1, 0)[z] = barrett_u64(params, out_raw.get_poly(1, 0)[z] + val);
+        let idx = params.poly_len + z;
+        out_raw.data[idx] += val;
+        if out_raw.data[idx] >= params.modulus {
+            out_raw.data[idx] -= params.modulus;
+        }
     }
     let out = out_raw.ntt();
 
@@ -820,20 +838,40 @@ pub fn automorph_ntt_tables(poly_len: usize, log2_poly_len: usize) -> Vec<Vec<us
 pub fn generate_automorph_tables_brute_force(params: &Params) -> Vec<Vec<usize>> {
     let mut tables = Vec::new();
     for i in (1..=params.poly_len_log2).rev() {
-        let t = (1 << i) + 1;
-
-        let poly = PolyMatrixRaw::random(&params, 1, 1);
-        let poly_ntt = poly.ntt();
-
-        let poly_auto = automorph_alloc(&poly, t);
-        let poly_auto_ntt = poly_auto.ntt();
-
-        let pol_orig = (&poly_ntt.get_poly(0, 0)[..params.poly_len]).to_vec();
-        let pol_auto = (&poly_auto_ntt.get_poly(0, 0)[..params.poly_len]).to_vec();
-
         let mut table_candidate = vec![0usize; params.poly_len];
-        for i in 0..params.poly_len {
-            table_candidate[i] = pol_orig.iter().position(|&x| x == pol_auto[i]).unwrap();
+        loop {
+            let t = (1 << i) + 1;
+
+            let poly = PolyMatrixRaw::random(&params, 1, 1);
+            let poly_ntt = poly.ntt();
+
+            let poly_auto = automorph_alloc(&poly, t);
+            let poly_auto_ntt = poly_auto.ntt();
+
+            let pol_orig = (&poly_ntt.get_poly(0, 0)[..params.poly_len]).to_vec();
+            let pol_auto = (&poly_auto_ntt.get_poly(0, 0)[..params.poly_len]).to_vec();
+
+            let mut must_redo = false;
+
+            for i in 0..params.poly_len {
+                let mut total = 0;
+                let mut found = None;
+                for j in 0..params.poly_len {
+                    if pol_orig[i] == pol_auto[j] {
+                        total += 1;
+                        found = Some(j);
+                    }
+                }
+                table_candidate[i] = found.unwrap();
+                if total != 1 {
+                    must_redo = true;
+                    break;
+                }
+            }
+
+            if !must_redo {
+                break;
+            }
         }
         tables.push(table_candidate);
     }
@@ -993,6 +1031,20 @@ mod test {
             &mut ChaCha20Rng::from_seed(pack_seed),
         );
 
+        let mut fake_pack_pub_params = pack_pub_params.clone();
+        // zero out all of the second rows
+        for i in 0..pack_pub_params.len() {
+            for col in 0..pack_pub_params[i].cols {
+                fake_pack_pub_params[i].get_poly_mut(1, col).fill(0);
+            }
+        }
+
+        let mut pack_pub_params_row_1s = pack_pub_params.clone();
+        for i in 0..pack_pub_params.len() {
+            pack_pub_params_row_1s[i] =
+                pack_pub_params[i].submatrix(1, 0, 1, pack_pub_params[i].cols);
+        }
+
         // generate poly_len ciphertexts
         let mut v_ct = Vec::new();
         let mut b_values = Vec::new();
@@ -1019,11 +1071,11 @@ mod test {
         }
 
         let now = Instant::now();
-        let (precomp_res, precomp_vals) = precompute_pack(
+        let (precomp_res, precomp_vals, precomp_tables) = precompute_pack(
             &params,
             params.poly_len_log2,
             &v_ct,
-            &pack_pub_params,
+            &fake_pack_pub_params,
             &y_constants,
         );
         println!(
@@ -1035,10 +1087,11 @@ mod test {
         let packed = pack_using_precomp_vals(
             &params,
             params.poly_len_log2,
-            &pack_pub_params,
+            &pack_pub_params_row_1s,
             &b_values,
             &precomp_res,
             &precomp_vals,
+            &precomp_tables,
             &y_constants,
         );
         println!("Packing took {} us", now.elapsed().as_micros());
