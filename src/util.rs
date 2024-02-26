@@ -58,14 +58,10 @@ pub fn add_into_no_reduce(res: &mut PolyMatrixNTT, a: &PolyMatrixNTT) {
     assert!(res.rows == a.rows);
     assert!(res.cols == a.cols);
 
-    // let params = res.params;
     for i in 0..res.rows {
         for j in 0..res.cols {
             let res_poly = res.get_poly_mut(i, j);
             let pol2 = a.get_poly(i, j);
-            // for z in 0..params.crt_count * params.poly_len {
-            //     res_poly[z] += pol2[z];
-            // }
             for (res_poly, pol2) in res_poly.iter_mut().zip(pol2.iter()) {
                 *res_poly += *pol2;
             }
@@ -113,7 +109,7 @@ pub fn scalar_multiply_avx(res: &mut PolyMatrixNTT, a: &PolyMatrixNTT, b: &PolyM
         for j in 0..b.cols {
             let res_poly = res.get_poly_mut(i, j);
             let pol1 = b.get_poly(i, j);
-            multiply_poly_avx(params, res_poly, pol1, pol2);
+            crate::packing::multiply_poly_avx(params, res_poly, pol1, pol2);
         }
     }
 }

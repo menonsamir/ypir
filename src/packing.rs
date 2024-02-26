@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{arch::x86_64::*, time::Instant};
 
 use log::debug;
 
@@ -169,7 +169,7 @@ fn pack_lwes_inner_non_recursive<'a>(
 
             ct_sum_1.as_mut_slice().copy_from_slice(ct_even.as_slice());
             add_into(&mut ct_sum_1, &neg_y_times_ct_odd);
-            add_into_no_reduce(ct_even, &y_times_ct_odd);
+            fast_add_into_no_reduce(ct_even, &y_times_ct_odd);
             total_3 += now.elapsed().as_micros();
 
             {
@@ -323,7 +323,7 @@ pub fn precompute_pack<'a>(
 
             ct_sum_1.as_mut_slice().copy_from_slice(ct_even.as_slice());
             add_into(&mut ct_sum_1, &neg_y_times_ct_odd);
-            add_into_no_reduce(ct_even, &y_times_ct_odd);
+            fast_add_into_no_reduce(ct_even, &y_times_ct_odd);
             total_3 += now.elapsed().as_micros();
 
             {
@@ -380,7 +380,7 @@ pub fn precompute_pack<'a>(
                 //     &ct_auto_1_ntt.raw().as_slice()[..30]
                 // );
 
-                res.push(cur_ginv_ct_ntt.clone());
+                res.push(condense_matrix(params, cur_ginv_ct_ntt));
 
                 let pub_param = &fake_pub_params[params.poly_len_log2 - 1 - (cur_ell - 1)];
                 // let ginv_ct_ntt = ginv_ct.ntt();
@@ -429,14 +429,19 @@ pub fn pack_using_precomp_vals<'a>(
     precomp_tables: &[Vec<usize>],
     y_constants: &(Vec<PolyMatrixNTT<'a>>, Vec<PolyMatrixNTT<'a>>),
 ) -> PolyMatrixNTT<'a> {
-    let mut working_set = vec![PolyMatrixNTT::zero(params, 1, 1); 1 << ell];
+    let now = Instant::now();
+    // let mut working_set = vec![PolyMatrixNTT::zero(params, 1, 1); 1 << ell];
+    let mut working_set = Vec::with_capacity(1 << (ell - 1));
+    for _ in 0..(1 << (ell - 1)) {
+        working_set.push(PolyMatrixNTT::zero(params, 1, 1));
+    }
 
     let mut y_times_ct_odd = PolyMatrixNTT::zero(params, 1, 1);
     let mut neg_y_times_ct_odd = PolyMatrixNTT::zero(params, 1, 1);
     let mut ct_sum_1 = PolyMatrixNTT::zero(params, 1, 1);
     let mut w_times_ginv_ct = PolyMatrixNTT::zero(params, 1, 1);
 
-    // let tables:  = generate_automorph_tables_brute_force(&params); // TODO: move out
+    println!("time_-1: {} us", now.elapsed().as_micros());
 
     let mut time_0 = 0;
     let mut time_1 = 0;
@@ -445,58 +450,85 @@ pub fn pack_using_precomp_vals<'a>(
     let mut time_4 = 0;
 
     let mut idx_precomp = 0;
+    let mut num_muls = 0;
     for cur_ell in 1..=ell {
-        let num_in = 1 << (ell - cur_ell + 1);
+        let mut num_in = 1 << (ell - cur_ell + 1);
         let num_out = num_in >> 1;
+
+        if num_in == params.poly_len {
+            num_in = num_out;
+        }
 
         let (first_half, second_half) = (&mut working_set[..num_in]).split_at_mut(num_out);
 
         for i in 0..num_out {
+            let now = Instant::now();
             let ct_even = &mut first_half[i];
-            let ct_odd = &second_half[i];
 
             let (y, neg_y) = (&y_constants.0[cur_ell - 1], &y_constants.1[cur_ell - 1]);
 
-            let now = Instant::now();
-
-            scalar_multiply_avx(&mut y_times_ct_odd, &y, &ct_odd);
-            scalar_multiply_avx(&mut neg_y_times_ct_odd, &neg_y, &ct_odd);
+            if cur_ell > 1 {
+                let ct_odd = &mut second_half[i];
+                scalar_multiply_avx(&mut y_times_ct_odd, &y, &ct_odd);
+                scalar_multiply_avx(&mut neg_y_times_ct_odd, &neg_y, &ct_odd);
+            }
 
             time_0 += now.elapsed().as_micros();
 
             let now = Instant::now();
-            ct_sum_1.as_mut_slice().copy_from_slice(ct_even.as_slice());
-            add_into_no_reduce(&mut ct_sum_1, &neg_y_times_ct_odd);
-            add_into_no_reduce(ct_even, &y_times_ct_odd);
+            if cur_ell > 1 {
+                ct_sum_1.as_mut_slice().copy_from_slice(ct_even.as_slice());
+                fast_add_into_no_reduce(&mut ct_sum_1, &neg_y_times_ct_odd);
+                fast_add_into_no_reduce(ct_even, &y_times_ct_odd);
+            }
             time_1 += now.elapsed().as_micros();
 
             // --
 
+            let now = Instant::now();
             let ct: &PolyMatrixNTT<'_> = &ct_sum_1;
             let t = (1 << cur_ell) + 1;
 
             let cur_ginv_ct_ntt = &precomp_vals[idx_precomp];
             idx_precomp += 1;
 
-            let now = Instant::now();
             let w = &pub_params[params.poly_len_log2 - 1 - (cur_ell - 1)];
             // let w = pub_param.submatrix(1, 0, 1, pub_param.cols);
             // let w_times_ginv_ct = &w * cur_ginv_ct_ntt;
             // multiply(&mut w_times_ginv_ct, &w, &cur_ginv_ct_ntt);
-            w_times_ginv_ct.as_mut_slice().fill(0);
-            multiply_no_reduce(&mut w_times_ginv_ct, &w, &cur_ginv_ct_ntt, 0);
+            // w_times_ginv_ct.as_mut_slice().fill(0);
+            fast_multiply_no_reduce(params, &mut w_times_ginv_ct, &w, &cur_ginv_ct_ntt, 0);
+            num_muls += 1;
             time_2 += now.elapsed().as_micros();
 
-            let now = Instant::now();
-            let ct_auto_1_ntt = apply_automorph_ntt(params, &precomp_tables, &ct, t);
-            time_3 += now.elapsed().as_micros();
+            if cur_ell > 1 {
+                let now = Instant::now();
+                apply_automorph_ntt(params, &precomp_tables, &ct, ct_even, t);
 
-            let now = Instant::now();
-            add_into_at_no_reduce(ct_even, &ct_auto_1_ntt, 0, 0);
-            add_into(ct_even, &w_times_ginv_ct);
-            time_4 += now.elapsed().as_micros();
+                // fast_add_into_no_reduce(ct_even, &ct_auto_1_ntt);
+                time_3 += now.elapsed().as_micros();
+                let now = Instant::now();
+
+                // second condition prevents overflow
+                if i < num_out / 2 && ((cur_ell - 1) % 5 != 0) {
+                    fast_add_into_no_reduce(ct_even, &w_times_ginv_ct);
+                } else {
+                    // reduction right before or after addition is much faster than at multiplication time
+                    fast_add_into(ct_even, &w_times_ginv_ct);
+                }
+                time_4 += now.elapsed().as_micros();
+            } else {
+                let now = Instant::now();
+                if i < num_out / 2 {
+                    fast_add_into_no_reduce(ct_even, &w_times_ginv_ct);
+                } else {
+                    fast_add_into(ct_even, &w_times_ginv_ct);
+                }
+                time_4 += now.elapsed().as_micros();
+            }
         }
     }
+    let now = Instant::now();
 
     println!("time_0: {} us", time_0);
     println!("time_1: {} us", time_1);
@@ -506,8 +538,12 @@ pub fn pack_using_precomp_vals<'a>(
 
     assert_eq!(idx_precomp, precomp_vals.len());
     println!("idx_precomp: {}", idx_precomp);
+    println!("num_muls: {}", num_muls);
 
-    let resulting_row_1 = &working_set[0].get_poly(0, 0).to_vec();
+    let mut resulting_row_1 = working_set[0].clone();
+    fast_reduce(&mut resulting_row_1);
+
+    let resulting_row_1 = resulting_row_1.as_slice();
 
     let mut res = precomp_res.clone();
     // {
@@ -538,6 +574,7 @@ pub fn pack_using_precomp_vals<'a>(
         }
     }
     let out = out_raw.ntt();
+    println!("time_5: {} us", now.elapsed().as_micros());
 
     // for z in 0..params.poly_len {
     //     let b_value = b_values[z];
@@ -546,6 +583,216 @@ pub fn pack_using_precomp_vals<'a>(
     // }
 
     out
+}
+
+// pub fn fast_scalar_multiply_avx(res: &mut PolyMatrixNTT, a: &PolyMatrixNTT, b: &PolyMatrixNTT) {
+//     assert_eq!(a.rows, 1);
+//     assert_eq!(a.cols, 1);
+//     assert_eq!(b.rows, 1);
+//     assert_eq!(b.cols, 1);
+//     assert_eq!(res.rows, 1);
+//     assert_eq!(res.cols, 1);
+
+//     // this is totally custom for cur_ell == 2
+
+//     let params = res.params;
+//     // let pol2 = a.get_poly(0, 0);
+//     for i in 0..b.rows {
+//         for j in 0..b.cols {
+//             let res_slc = res.get_poly_mut(i, j);
+//             let a_slc = a.get_poly(0, 0);
+//             let b_slc = b.get_poly(i, j);
+//             unsafe {
+//                 let a_ptr = a_slc.as_ptr();
+//                 let b_ptr = b_slc.as_ptr();
+//                 let res_ptr = res_slc.as_mut_ptr();
+
+//                 for m in 0..8 {
+//                     // all the values in the NTT form of the scalar polynomial are the same
+//                     let a_val = *a_ptr.add(m * 512);
+//                     let x = _mm256_set1_epi64x(a_val as i64);
+//                     for z in (0..512).step_by(4) {
+//                         let p_y = b_ptr.add(m * 512 + z);
+//                         let y = _mm256_load_si256(p_y as *const _);
+//                         let product = _mm256_mul_epu32(x, y);
+
+//                         let p_z = res_ptr.add(m * 512 + z);
+//                         _mm256_store_si256(p_z as *mut _, product);
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
+
+pub fn fast_barrett_raw_u64(input: u64, const_ratio_1: u64, modulus: u64) -> u64 {
+    let tmp = (((input as u128) * (const_ratio_1 as u128)) >> 64) as u64;
+
+    // Barrett subtraction
+    let res = input - tmp * modulus;
+
+    res
+}
+
+pub fn fast_add_into(res: &mut PolyMatrixNTT, a: &PolyMatrixNTT) {
+    assert!(res.rows == a.rows);
+    assert!(res.cols == a.cols);
+
+    let params = res.params;
+    for i in 0..res.rows {
+        for j in 0..res.cols {
+            let res_poly = res.get_poly_mut(i, j);
+            let a_poly = a.get_poly(i, j);
+            for c in 0..params.crt_count {
+                for i in 0..params.poly_len {
+                    let idx = c * params.poly_len + i;
+                    unsafe {
+                        let p_res = res_poly.as_mut_ptr().add(idx);
+                        let p_a = a_poly.as_ptr().add(idx);
+                        let val = *p_res + *p_a;
+                        let reduced =
+                            fast_barrett_raw_u64(val, params.barrett_cr_1[c], params.moduli[c]);
+                        *p_res = reduced;
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn fast_multiply_no_reduce(
+    params: &Params,
+    res: &mut PolyMatrixNTT,
+    a: &PolyMatrixNTT,
+    b: &PolyMatrixNTT,
+    _start_inner_dim: usize,
+) {
+    assert_eq!(res.rows, a.rows);
+    assert_eq!(res.cols, b.cols);
+    assert_eq!(res.rows, 1);
+    assert_eq!(res.cols, 1);
+
+    assert_eq!(a.cols, b.rows);
+    assert_eq!(params.crt_count * params.poly_len, 2 * 2048);
+
+    unsafe {
+        let a_ptr = a.as_slice().as_ptr();
+        let b_ptr = b.as_slice().as_ptr();
+        let res_ptr = res.as_mut_slice().as_mut_ptr();
+        let pol_sz = params.poly_len;
+
+        for idx in (0..pol_sz).step_by(8) {
+            let mut sum_lo = _mm512_setzero_si512();
+            let mut sum_hi = _mm512_setzero_si512();
+            for k in 0..a.cols {
+                let p_x = a_ptr.add(k * 2 * pol_sz + idx);
+                let p_y = b_ptr.add(k * 2 * pol_sz + idx);
+
+                let x = _mm512_load_si512(p_x as *const _);
+                let x_lo = x;
+                let x_hi = _mm512_srli_epi64(x, 32);
+                let y = _mm512_load_si512(p_y as *const _);
+                let y_lo = y;
+                let y_hi = _mm512_srli_epi64(y, 32);
+
+                let product_lo = _mm512_mul_epu32(x_lo, y_lo);
+                let product_hi = _mm512_mul_epu32(x_hi, y_hi);
+
+                sum_lo = _mm512_add_epi64(sum_lo, product_lo);
+                sum_hi = _mm512_add_epi64(sum_hi, product_hi);
+            }
+
+            let p_z = res_ptr.add(idx);
+            _mm512_store_si512(p_z as *mut _, sum_lo);
+            let p_z = res_ptr.add(pol_sz + idx);
+            _mm512_store_si512(p_z as *mut _, sum_hi);
+        }
+    }
+}
+
+pub fn condense_matrix<'a>(params: &'a Params, a: &PolyMatrixNTT<'a>) -> PolyMatrixNTT<'a> {
+    let mut res = PolyMatrixNTT::zero(params, a.rows, a.cols);
+    for i in 0..a.rows {
+        for j in 0..a.cols {
+            let res_poly = &mut res.get_poly_mut(i, j);
+            let a_poly = a.get_poly(i, j);
+            for z in 0..params.poly_len {
+                res_poly[z] = a_poly[z] | (a_poly[z + params.poly_len] << 32);
+            }
+        }
+    }
+    res
+}
+
+pub fn multiply_add_poly_avx(_params: &Params, res: &mut [u64], a: &[u64], b: &[u64]) {
+    unsafe {
+        let a_ptr = a.as_ptr();
+        let b_ptr = b.as_ptr();
+        let res_ptr = res.as_mut_ptr();
+        for i in (0..res.len()).step_by(8) {
+            let p_x = a_ptr.add(i);
+            let p_y = b_ptr.add(i);
+            let p_z = res_ptr.add(i);
+
+            let x = _mm512_load_si512(p_x as *const _);
+            let y = _mm512_load_si512(p_y as *const _);
+            let z = _mm512_load_si512(p_z as *const _);
+
+            let product = _mm512_mul_epu32(x, y);
+            let out = _mm512_add_epi64(z, product);
+
+            _mm512_store_si512(p_z as *mut _, out);
+        }
+    }
+}
+
+pub fn multiply_poly_avx(_params: &Params, res: &mut [u64], a: &[u64], b: &[u64]) {
+    unsafe {
+        let a_ptr = a.as_ptr();
+        let b_ptr = b.as_ptr();
+        let res_ptr = res.as_mut_ptr();
+
+        for i in (0..res.len()).step_by(8) {
+            let p_x = a_ptr.add(i);
+            let p_y = b_ptr.add(i);
+            let p_z = res_ptr.add(i);
+
+            let x = _mm512_load_si512(p_x as *const _);
+            let y = _mm512_load_si512(p_y as *const _);
+
+            let product = _mm512_mul_epu32(x, y);
+
+            _mm512_store_si512(p_z as *mut _, product);
+        }
+    }
+}
+
+pub fn fast_add_into_no_reduce(res: &mut PolyMatrixNTT, a: &PolyMatrixNTT) {
+    assert!(res.rows == a.rows);
+    assert!(res.cols == a.cols);
+
+    let a_slc = a.as_slice();
+    let res_slc = res.as_mut_slice();
+    for (res_chunk, a_chunk) in res_slc.chunks_exact_mut(8).zip(a_slc.chunks_exact(8)) {
+        for i in 0..8 {
+            res_chunk[i] += a_chunk[i];
+        }
+    }
+}
+
+pub fn fast_reduce(res: &mut PolyMatrixNTT) {
+    let params = res.params;
+    let res_slc = res.as_mut_slice();
+    for m in 0..params.crt_count {
+        for i in 0..params.poly_len {
+            let idx = m * params.poly_len + i;
+            // res_slc[idx] = barrett_coeff_u64(params, res_slc[idx], m);
+            unsafe {
+                let p = res_slc.as_mut_ptr().add(idx);
+                *p = barrett_coeff_u64(params, *p, m);
+            }
+        }
+    }
 }
 
 pub fn combine<'a>(
@@ -839,6 +1086,9 @@ pub fn generate_automorph_tables_brute_force(params: &Params) -> Vec<Vec<usize>>
     let mut tables = Vec::new();
     for i in (1..=params.poly_len_log2).rev() {
         let mut table_candidate = vec![0usize; params.poly_len];
+
+        // for 2048 balls and 2^28 bins, we will have a collision ~1% of the time
+        // so, we redo if necessary
         loop {
             let t = (1 << i) + 1;
 
@@ -862,7 +1112,7 @@ pub fn generate_automorph_tables_brute_force(params: &Params) -> Vec<Vec<usize>>
                         found = Some(j);
                     }
                 }
-                table_candidate[i] = found.unwrap();
+                table_candidate[found.unwrap()] = i;
                 if total != 1 {
                     must_redo = true;
                     break;
@@ -875,6 +1125,10 @@ pub fn generate_automorph_tables_brute_force(params: &Params) -> Vec<Vec<usize>>
         }
         tables.push(table_candidate);
     }
+    println!("tables[0]: {:?}", &tables[0][..32]);
+    println!("tables[1]: {:?}", &tables[1][..32]);
+    println!("tables[2]: {:?}", &tables[2][..32]);
+    println!("tables[3]: {:?}", &tables[3][..32]);
     tables
 }
 
@@ -891,7 +1145,7 @@ pub fn apply_automorph_ntt_raw<'a>(
     let table = &tables[table_idx];
 
     for i in 0..poly_len {
-        out[i] = poly[table[i]];
+        out[i] += poly[table[i]];
     }
 }
 
@@ -899,10 +1153,11 @@ pub fn apply_automorph_ntt<'a>(
     params: &'a Params,
     tables: &[Vec<usize>],
     mat: &PolyMatrixNTT<'a>,
+    res: &mut PolyMatrixNTT<'a>,
     t: usize,
-) -> PolyMatrixNTT<'a> {
+) {
     // run apply_automorph_ntt on each poly in the matrix
-    let mut res = PolyMatrixNTT::zero(params, mat.rows, mat.cols);
+    // let mut res = PolyMatrixNTT::zero(params, mat.rows, mat.cols);
     for i in 0..mat.rows {
         for j in 0..mat.cols {
             let poly = mat.get_poly(i, j);
@@ -915,7 +1170,7 @@ pub fn apply_automorph_ntt<'a>(
             }
         }
     }
-    res
+    // res
 }
 
 #[cfg(test)]
@@ -1043,6 +1298,7 @@ mod test {
         for i in 0..pack_pub_params.len() {
             pack_pub_params_row_1s[i] =
                 pack_pub_params[i].submatrix(1, 0, 1, pack_pub_params[i].cols);
+            pack_pub_params_row_1s[i] = condense_matrix(&params, &pack_pub_params_row_1s[i]);
         }
 
         // generate poly_len ciphertexts
@@ -1083,6 +1339,8 @@ mod test {
             now.elapsed().as_micros()
         );
 
+        println!("t_exp_left: {}", params.t_exp_left);
+
         let now = Instant::now();
         let packed = pack_using_precomp_vals(
             &params,
@@ -1120,23 +1378,43 @@ mod test {
 
     #[test]
     fn test_automorph_tables() {
-        let params = get_test_params();
+        let params = params_for_scenario(1 << 30, 1);
 
         let now = Instant::now();
         let tables = generate_automorph_tables_brute_force(&params);
         println!("Generating tables took {} us", now.elapsed().as_micros());
 
-        for t in [3, 9, 17, 33, 65, 129, 257, 513, 1025, 2049] {
-            let poly = PolyMatrixRaw::random(&params, 1, 1);
+        let mut rng = ChaCha20Rng::from_seed([7u8; 32]);
+
+        for t in ([3, 9, 17, 33, 65, 129, 257, 513, 1025, 2049])
+            .into_iter()
+            .rev()
+        {
+            let poly = PolyMatrixRaw::random_rng(&params, 1, 1, &mut rng);
             let poly_ntt = poly.ntt();
 
             let poly_auto = automorph_alloc(&poly, t);
             let poly_auto_ntt = poly_auto.ntt();
-            let poly_auto_ntt_using_tables = apply_automorph_ntt(&params, &tables, &poly_ntt, t);
+            let mut poly_auto_ntt_using_tables = PolyMatrixNTT::zero(&params, 1, 1);
+            apply_automorph_ntt(
+                &params,
+                &tables,
+                &poly_ntt,
+                &mut poly_auto_ntt_using_tables,
+                t,
+            );
+
+            println!("poly_ntt: {:?}", &poly_ntt.as_slice()[..30]);
+            println!(
+                "poly_auto_ntt_using_tables: {:?}",
+                &poly_auto_ntt_using_tables.as_slice()[..30]
+            );
 
             assert_eq!(
                 &poly_auto_ntt.as_slice(),
-                &poly_auto_ntt_using_tables.as_slice()
+                &poly_auto_ntt_using_tables.as_slice(),
+                "t: {}",
+                t
             );
         }
     }
