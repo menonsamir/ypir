@@ -129,6 +129,20 @@ pub fn split_alloc(
     out
 }
 
+pub fn generate_fake_pack_pub_params<'a>(params: &'a Params) -> Vec<PolyMatrixNTT<'a>> {
+    let pack_pub_params = raw_generate_expansion_params(
+        &params,
+        &PolyMatrixRaw::zero(&params, 1, 1),
+        params.poly_len_log2,
+        params.t_exp_left,
+        &mut ChaCha20Rng::from_entropy(),
+        &mut ChaCha20Rng::from_seed(STATIC_SEED_2),
+    );
+    pack_pub_params
+}
+
+pub type Precomp<'a> = Vec<(PolyMatrixNTT<'a>, Vec<PolyMatrixNTT<'a>>, Vec<Vec<usize>>)>;
+
 #[derive(Clone)]
 pub struct OfflinePrecomputedValues<'a> {
     pub hint_0: Vec<u64>,
@@ -136,8 +150,9 @@ pub struct OfflinePrecomputedValues<'a> {
     pub pseudorandom_query_1: Vec<PolyMatrixNTT<'a>>,
     pub y_constants: (Vec<PolyMatrixNTT<'a>>, Vec<PolyMatrixNTT<'a>>),
     pub smaller_server: YServer<'a, u16>,
-    pub prep_packed_vals: Vec<Vec<PolyMatrixNTT<'a>>>,
     pub prepacked_lwe: Vec<Vec<PolyMatrixNTT<'a>>>,
+    pub fake_pack_pub_params: Vec<PolyMatrixNTT<'a>>,
+    pub precomp: Precomp<'a>,
 }
 
 #[derive(Clone)]
@@ -577,6 +592,16 @@ where
         assert_eq!(smaller_params.db_dim_1, params.db_dim_2);
         assert!(out_rows as f64 >= (blowup_factor * (lwe_params.n + 1) as f64));
 
+        debug!(
+            "the first {} LWE output ciphertexts of the DoublePIR round (out of {} total) are query-indepednent",
+            special_offs, out_rows
+        );
+        debug!(
+            "the next {} LWE output ciphertexts are query-dependent",
+            blowup_factor.ceil() as usize
+        );
+        debug!("the rest are zero");
+
         // Begin offline precomputation
 
         let now = Instant::now();
@@ -634,8 +659,24 @@ where
         let combined = [&hint_1[..], &vec![0u64; out_rows]].concat();
         assert_eq!(combined.len(), out_rows * (params.poly_len + 1));
         let prepacked_lwe = prep_pack_many_lwes(&params, &combined, rho);
-        let prep_packed_vals =
-            prep_pack_many_lwes_packed_vals(&params, &prepacked_lwe, rho, &y_constants);
+        // let prep_packed_vals =
+        //     prep_pack_many_lwes_packed_vals(&params, &prepacked_lwe, rho, &y_constants);
+
+        let now = Instant::now();
+        let fake_pack_pub_params = generate_fake_pack_pub_params(&params);
+
+        let mut precomp: Precomp = Vec::new();
+        for i in 0..prepacked_lwe.len() {
+            let tup = precompute_pack(
+                params,
+                params.poly_len_log2,
+                &prepacked_lwe[i],
+                &fake_pack_pub_params,
+                &y_constants,
+            );
+            precomp.push(tup);
+        }
+        println!("Precomp in {} us", now.elapsed().as_micros());
 
         OfflinePrecomputedValues {
             hint_0,
@@ -643,8 +684,9 @@ where
             pseudorandom_query_1,
             y_constants,
             smaller_server,
-            prep_packed_vals,
             prepacked_lwe,
+            fake_pack_pub_params,
+            precomp,
         }
     }
 
@@ -702,8 +744,9 @@ where
         let pseudorandom_query_1 = &offline_vals.pseudorandom_query_1;
         let y_constants = &offline_vals.y_constants;
         let smaller_server = &mut offline_vals.smaller_server;
-        let prep_packed_vals = &offline_vals.prep_packed_vals;
-        let prepacked_lwe_mut = &mut offline_vals.prepacked_lwe;
+        let prepacked_lwe = &offline_vals.prepacked_lwe;
+        let fake_pack_pub_params = &offline_vals.fake_pack_pub_params;
+        let precomp = &offline_vals.precomp;
 
         // Begin online computation
 
@@ -724,7 +767,7 @@ where
         let mut second_pass_time_ms = 0;
         let mut ring_packing_time_ms = 0;
         let mut responses = Vec::new();
-        for (intermediate_chunk, (packed_query_col, pack_pub_params)) in intermediate
+        for (intermediate_chunk, (packed_query_col, pack_pub_params_row_1s)) in intermediate
             .as_slice()
             .chunks(db_cols)
             .zip(second_dim_queries.iter())
@@ -812,6 +855,7 @@ where
 
             // combined is now (poly_len + 1) * (out_rows)
             // let combined = [&hint_1_combined[..], response.as_slice()].concat();
+            let mut excess_cts = Vec::with_capacity(blowup_factor.ceil() as usize);
             for j in special_offs..special_offs + blowup_factor.ceil() as usize {
                 let mut rlwe_ct = PolyMatrixRaw::zero(&params, 2, 1);
 
@@ -829,20 +873,40 @@ where
                 //     rlwe_ct.get_poly_mut(0, 0)[k] = nega[k];
                 // }
 
-                let j_within_last = j % params.poly_len;
-                prepacked_lwe_mut.last_mut().unwrap()[j_within_last] = rlwe_ct.ntt();
+                // let j_within_last = j % params.poly_len;
+                // prepacked_lwe_mut.last_mut().unwrap()[j_within_last] = rlwe_ct.ntt();
+                excess_cts.push(rlwe_ct.ntt());
             }
             debug!("in between: {} us", now.elapsed().as_micros());
 
-            let packed = pack_many_lwes(
+            // assert_eq!(pack_pub_params_row_1s[0].rows, 1);
+
+            let mut packed = pack_many_lwes(
                 &params,
-                &prepacked_lwe_mut,
-                &prep_packed_vals,
+                &prepacked_lwe,
+                &precomp,
                 response.as_slice(),
                 rho,
-                &pack_pub_params,
+                &pack_pub_params_row_1s,
                 &y_constants,
             );
+
+            let now = Instant::now();
+            let mut pack_pub_params = fake_pack_pub_params.clone();
+            for i in 0..pack_pub_params.len() {
+                let uncondensed = uncondense_matrix(params, &pack_pub_params_row_1s[i]);
+                pack_pub_params[i].copy_into(&uncondensed, 1, 0);
+            }
+            debug!("uncondense pub params: {} us", now.elapsed().as_micros());
+            let now = Instant::now();
+            let other_packed =
+                pack_using_single_with_offset(&params, &pack_pub_params, &excess_cts, special_offs);
+            add_into(&mut packed[0], &other_packed);
+            debug!(
+                "pack_using_single_with_offset: {} us",
+                now.elapsed().as_micros()
+            );
+
             let now = Instant::now();
             let mut packed_mod_switched = Vec::with_capacity(packed.len());
             for ct in packed.iter() {

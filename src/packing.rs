@@ -4,6 +4,8 @@ use log::debug;
 
 use spiral_rs::{arith::*, gadget::*, ntt::*, params::*, poly::*};
 
+use crate::server::Precomp;
+
 use super::util::*;
 
 fn homomorphic_automorph<'a>(
@@ -411,14 +413,6 @@ pub fn precompute_pack<'a>(
     (working_set[0].clone(), res, tables)
 }
 
-// pub fn client_precomp_w<'a>(
-//     params: &'a Params,
-//     ell: usize,
-//     pub_params: &[PolyMatrixNTT<'a>],
-// ) -> Vec<PolyMatrixNTT<'a>> {
-
-// }
-
 pub fn pack_using_precomp_vals<'a>(
     params: &'a Params,
     ell: usize,
@@ -585,6 +579,28 @@ pub fn pack_using_precomp_vals<'a>(
     out
 }
 
+pub fn pack_single_lwe<'a>(
+    params: &'a Params,
+    pub_params: &[PolyMatrixNTT<'a>],
+    lwe_ct: &PolyMatrixNTT<'a>,
+) -> PolyMatrixNTT<'a> {
+    // computing:
+    // r0 = f
+    // r1 = r0 + automorph(r0, ts[0])
+    // r2 = r1 + automorph(r1, ts[1])
+    // ...
+    // r_\log d = ...
+
+    let mut cur_r = lwe_ct.clone();
+    for i in 0..params.poly_len_log2 {
+        let t = (params.poly_len / (1 << i)) + 1;
+        let pub_param = &pub_params[i];
+        let tau_of_r = homomorphic_automorph(params, t, params.t_exp_left, &cur_r, pub_param);
+        add_into(&mut cur_r, &tau_of_r);
+    }
+    cur_r
+}
+
 // pub fn fast_scalar_multiply_avx(res: &mut PolyMatrixNTT, a: &PolyMatrixNTT, b: &PolyMatrixNTT) {
 //     assert_eq!(a.rows, 1);
 //     assert_eq!(a.cols, 1);
@@ -718,6 +734,21 @@ pub fn condense_matrix<'a>(params: &'a Params, a: &PolyMatrixNTT<'a>) -> PolyMat
             let a_poly = a.get_poly(i, j);
             for z in 0..params.poly_len {
                 res_poly[z] = a_poly[z] | (a_poly[z + params.poly_len] << 32);
+            }
+        }
+    }
+    res
+}
+
+pub fn uncondense_matrix<'a>(params: &'a Params, a: &PolyMatrixNTT<'a>) -> PolyMatrixNTT<'a> {
+    let mut res = PolyMatrixNTT::zero(params, a.rows, a.cols);
+    for i in 0..a.rows {
+        for j in 0..a.cols {
+            let res_poly = &mut res.get_poly_mut(i, j);
+            let a_poly = a.get_poly(i, j);
+            for z in 0..params.poly_len {
+                res_poly[z] = a_poly[z] & ((1u64 << 32) - 1);
+                res_poly[z + params.poly_len] = a_poly[z] >> 32;
             }
         }
     }
@@ -942,36 +973,6 @@ pub fn pack_lwes<'a>(
     assert_eq!(cols_to_do, params.poly_len);
     assert_eq!(b_values.len(), params.poly_len);
 
-    // let mut rlwe_cts = Vec::new();
-    // for i in 0..cols_to_do {
-    //     let mut rlwe_ct = preped_rlwe_cts[i].clone();
-
-    //     // 'b' scalar
-    //     let b_val = 0; //b_values[i];
-
-    //     assert_eq!(params.crt_count, 2);
-    //     let parts = rlwe_ct.get_poly_mut(1, 0).split_at_mut(params.poly_len);
-    //     // assert!(parts.0.iter().all(|&x| x == 0));
-    //     // assert!(parts.1.iter().all(|&x| x == 0));
-    //     parts.0.fill(b_val % params.moduli[0]);
-    //     parts.1.fill(b_val % params.moduli[1]); // TODO: use barrett reduction
-
-    //     rlwe_cts.push(rlwe_ct);
-    // }
-
-    // let now = Instant::now();
-    // let mut output_preped_packed_vals = Vec::new();
-    // pack_lwes_inner_non_recursive(
-    //     params,
-    //     params.poly_len_log2,
-    //     0,
-    //     &preped_rlwe_cts,
-    //     &[],
-    //     y_constants,
-    //     None,
-    //     Some(&mut output_preped_packed_vals),
-    // );
-    // debug!("prepack: {} us", now.elapsed().as_micros());
     let now = Instant::now();
     let preped_packed_val_opt = if preped_packed_vals.len() == 0 {
         None
@@ -1002,10 +1003,10 @@ pub fn pack_lwes<'a>(
 pub fn pack_many_lwes<'a>(
     params: &'a Params,
     prep_rlwe_cts: &[Vec<PolyMatrixNTT<'a>>],
-    prep_packed_vals: &[Vec<PolyMatrixNTT<'a>>],
+    precomp: &Precomp<'a>,
     b_values: &[u64],
     num_rlwe_outputs: usize,
-    pub_params: &[PolyMatrixNTT<'a>],
+    pack_pub_params_row_1s: &[PolyMatrixNTT<'a>],
     y_constants: &(Vec<PolyMatrixNTT<'a>>, Vec<PolyMatrixNTT<'a>>),
 ) -> Vec<PolyMatrixNTT<'a>> {
     assert_eq!(prep_rlwe_cts.len(), num_rlwe_outputs);
@@ -1014,24 +1015,43 @@ pub fn pack_many_lwes<'a>(
 
     let mut res = Vec::new();
     for i in 0..num_rlwe_outputs {
-        // The last RLWE output cannot be 'prepared' because it changes for each query
-        let empty = Vec::new();
-        let prep_packed_val = if i == num_rlwe_outputs - 1 {
-            &empty
-        } else {
-            &prep_packed_vals[i]
-        };
-        res.push(pack_lwes(
-            params,
-            &b_values[i * params.poly_len..][..params.poly_len],
-            &prep_rlwe_cts[i],
-            &prep_packed_val,
-            params.poly_len,
-            pub_params,
-            y_constants,
-        ));
+        let (precomp_res, precomp_vals, precomp_tables) = &precomp[i];
+
+        let packed = pack_using_precomp_vals(
+            &params,
+            params.poly_len_log2,
+            &pack_pub_params_row_1s,
+            &b_values,
+            &precomp_res,
+            &precomp_vals,
+            &precomp_tables,
+            &y_constants,
+        );
+
+        res.push(packed);
     }
 
+    res
+}
+
+fn rotation_poly<'a>(params: &'a Params, amount: usize) -> PolyMatrixNTT<'a> {
+    let mut res = PolyMatrixRaw::zero(params, 1, 1);
+    res.data[amount] = 1;
+    res.ntt()
+}
+pub fn pack_using_single_with_offset<'a>(
+    params: &'a Params,
+    pub_params: &[PolyMatrixNTT<'a>],
+    cts: &[PolyMatrixNTT<'a>],
+    offset: usize,
+) -> PolyMatrixNTT<'a> {
+    let mut res = PolyMatrixNTT::zero(params, 2, 1);
+    for i in 0..cts.len() {
+        let packed_single = pack_single_lwe(params, pub_params, &cts[i]);
+        let rotation = rotation_poly(params, offset + i);
+        let rotated = scalar_multiply_alloc(&rotation, &packed_single);
+        add_into(&mut res, &rotated);
+    }
     res
 }
 
@@ -1374,6 +1394,63 @@ mod test {
             gold.data[i] = i as u64 % params.pt_modulus;
         }
         assert_eq!(rescaled.as_slice(), gold.as_slice());
+    }
+
+    #[test]
+    fn test_single_packing() {
+        let params = params_for_scenario(1 << 30, 1);
+        let mut client = Client::init(&params);
+        client.generate_secret_keys();
+
+        let pack_seed = [1u8; 32];
+        let cts_seed = [2u8; 32];
+        let mut ct_pub_rng = ChaCha20Rng::from_seed(cts_seed);
+
+        let pack_pub_params = raw_generate_expansion_params(
+            &params,
+            client.get_sk_reg(),
+            params.poly_len_log2,
+            params.t_exp_left,
+            &mut ChaCha20Rng::from_entropy(),
+            &mut ChaCha20Rng::from_seed(pack_seed),
+        );
+
+        // generate 1 ciphertext
+        let sentinel_val = 99;
+        let mut v_ct = Vec::new();
+        for _i in 0..1 {
+            let mut pt = PolyMatrixRaw::zero(&params, 1, 1);
+            let val = sentinel_val % params.pt_modulus;
+            let scale_k = params.modulus / params.pt_modulus;
+            let mod_inv = invert_uint_mod(params.poly_len as u64, params.modulus).unwrap();
+            let val_to_enc = multiply_uint_mod(val * scale_k, mod_inv, params.modulus);
+            pt.data[0] = val_to_enc;
+            let ct = client.encrypt_matrix_reg(
+                &pt.ntt(),
+                &mut ChaCha20Rng::from_entropy(),
+                &mut ct_pub_rng,
+            );
+            v_ct.push(ct);
+        }
+        let now = Instant::now();
+        let packed = pack_single_lwe(&params, &pack_pub_params, &v_ct[0]);
+        println!("Packing took {} us", now.elapsed().as_micros());
+
+        let packed_raw = packed.raw();
+        println!("packed_0: {:?}", &packed_raw.get_poly(0, 0)[..10]);
+
+        // decrypt + decode
+        let dec = client.decrypt_matrix_reg(&packed);
+        let dec_raw = dec.raw();
+
+        // rescale
+        let mut rescaled = PolyMatrixRaw::zero(&params, 1, 1);
+        for i in 0..params.poly_len {
+            rescaled.data[i] = rescale(dec_raw.data[i], params.modulus, params.pt_modulus);
+        }
+
+        println!("rescaled: {:?}", &rescaled.as_slice()[..50]);
+        assert_eq!(rescaled.as_slice()[0], sentinel_val);
     }
 
     #[test]
