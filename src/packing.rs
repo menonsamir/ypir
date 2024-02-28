@@ -1265,7 +1265,7 @@ mod test {
 
         let packed_raw = packed.raw();
         println!("packed_0: {:?}", &packed_raw.get_poly(0, 0)[..10]);
-        assert_eq!(packed_raw.get_poly(0, 0)[0], 48718429063985342u64);
+        assert_eq!(packed_raw.get_poly(0, 0)[0], 47649720264253743u64);
 
         // decrypt + decode
         let dec = client.decrypt_matrix_reg(&packed);

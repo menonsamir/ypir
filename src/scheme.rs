@@ -420,8 +420,18 @@ mod test {
     use test_log::test;
 
     #[test]
-    fn test_ypir() {
+    fn test_ypir_basic() {
         run_ypir_batched(1 << 30, 1, 1, 1);
+    }
+
+    #[test]
+    fn test_ypir_many_clients() {
+        run_ypir_batched(1 << 30, 1, 2, 1);
+    }
+
+    #[test]
+    fn test_ypir_many_clients_and_trials() {
+        run_ypir_batched(1 << 30, 1, 2, 5);
     }
 
     #[test]
