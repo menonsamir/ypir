@@ -1,0 +1,146 @@
+{
+  "scheme": {
+    "family": "ypir-zpir",
+    "variant": "ypir"
+  },
+  "benchmark": {
+    "machineName": "AWS:r6i.4xlarge",
+    "coresUsed": 1,
+    "maxMemoryGB": 128,
+    "correctness": false,
+    "repetitions": 1,
+    "warmupIterations": 0,
+    "testInvocation": "python rodeo/benchmark.py ypir rodeo/workload.json rodeo/output.json"
+  },
+  "results": [
+    {
+      "scenario": {
+        "db": {
+          "numItems": 274877906944,
+          "itemSizeBits": 1
+        },
+        "clients": {
+          "numClients": 2
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 684130,
+          "clientTimeMs": 0,
+          "simplepirPrepTimeMs": 0,
+          "simplepirHintBytes": 469762048,
+          "doublepirHintBytes": 14680064
+        },
+        "online": {
+          "uploadBytes": 2570240,
+          "downloadBytes": 24576,
+          "simplepirRespBytes": 458752,
+          "doublepirRespBytes": 12288,
+          "serverTimeMs": 4281,
+          "clientQueryGenTimeMs": 7652,
+          "clientDecodeTimeMs": 0,
+          "firstPassTimeMs": 4033,
+          "secondPassTimeMs": 115,
+          "ringPackingTimeMs": 78,
+          "sqrtNBytes": 131072,
+          "allServerTimesMs": [
+            4230,
+            4264,
+            4356,
+            4302,
+            4253
+          ],
+          "stdDevServerTimeMs": 44.13615298142782
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 274877906944,
+          "itemSizeBits": 1
+        },
+        "clients": {
+          "numClients": 4
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 683076,
+          "clientTimeMs": 0,
+          "simplepirPrepTimeMs": 0,
+          "simplepirHintBytes": 469762048,
+          "doublepirHintBytes": 14680064
+        },
+        "online": {
+          "uploadBytes": 2570240,
+          "downloadBytes": 49152,
+          "simplepirRespBytes": 458752,
+          "doublepirRespBytes": 12288,
+          "serverTimeMs": 7811,
+          "clientQueryGenTimeMs": 8691,
+          "clientDecodeTimeMs": 0,
+          "firstPassTimeMs": 7388,
+          "secondPassTimeMs": 220,
+          "ringPackingTimeMs": 149,
+          "sqrtNBytes": 131072,
+          "allServerTimesMs": [
+            7763,
+            7833,
+            7794,
+            7786,
+            7879
+          ],
+          "stdDevServerTimeMs": 40.806862168022676
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 274877906944,
+          "itemSizeBits": 1
+        },
+        "clients": {
+          "numClients": 8
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 685601,
+          "clientTimeMs": 0,
+          "simplepirPrepTimeMs": 0,
+          "simplepirHintBytes": 469762048,
+          "doublepirHintBytes": 14680064
+        },
+        "online": {
+          "uploadBytes": 2570240,
+          "downloadBytes": 98304,
+          "simplepirRespBytes": 458752,
+          "doublepirRespBytes": 12288,
+          "serverTimeMs": 16618,
+          "clientQueryGenTimeMs": 7359,
+          "clientDecodeTimeMs": 0,
+          "firstPassTimeMs": 15790,
+          "secondPassTimeMs": 458,
+          "ringPackingTimeMs": 299,
+          "sqrtNBytes": 131072,
+          "allServerTimesMs": [
+            16562,
+            16271,
+            16759,
+            16662,
+            16834
+          ],
+          "stdDevServerTimeMs": 195.96795656433224
+        }
+      }
+    }
+  ]
+}
