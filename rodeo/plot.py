@@ -308,7 +308,9 @@ def upload(scheme, scenario, x):
     if scheme == "simplepir*":
         return format_bytes(x["online"]["simplepirQueryBytes"])
     elif scheme == "doublepir*":
-        return format_bytes(x["online"]["doublepirQueryBytes"])
+        return format_bytes(
+            x["online"]["simplepirQueryBytes"] + x["online"]["doublepirQueryBytes"]
+        )
     else:
         return format_bytes(x["online"]["uploadBytes"])
 
@@ -697,6 +699,14 @@ def plot_ccb_rlwe(data_files_json: list[str], output_type: str):
         sys.exit(1)
 
 
+def custom_disp_seconds(t: float, ms_cutoff: float) -> str:
+    if t < ms_cutoff:
+        # use ms
+        return f"{t * 1000:.0f} ms"
+    else:
+        return f"{t:.2f} s"
+
+
 def ypir_breakdown(data_files_json: list[str], output_type: str):
     scheme_results, all_scenarios = gather_1_bit_retrieval_data(data_files_json)
 
@@ -763,11 +773,17 @@ def ypir_breakdown(data_files_json: list[str], output_type: str):
         output += (
             padw(f"{db_size_gb}~GB")
             + " & "
-            + padw(f"{first_pass:.2f} s ({first_pass / total * 100:.0f}\\%)")
+            + padw(
+                f"{custom_disp_seconds(first_pass, 0.0)} ({first_pass / total * 100:.0f}\\%)"
+            )
             + " & "
-            + padw(f"{second_pass:.2f} s ({second_pass / total * 100:.0f}\\%)")
+            + padw(
+                f"{custom_disp_seconds(second_pass, 1.0)} ({second_pass / total * 100:.0f}\\%)"
+            )
             + " & "
-            + padw(f"{ring_packing:.2f} s ({ring_packing / total * 100:.0f}\\%)")
+            + padw(
+                f"{custom_disp_seconds(ring_packing, 1.0)} ({ring_packing / total * 100:.0f}\\%)"
+            )
             + " & "
             + padw(f"{total:.2f} s")
             + " \\\\ \n"

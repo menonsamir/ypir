@@ -379,7 +379,9 @@ pub fn run_ypir_on_params<const K: usize>(params: Params, trials: usize) -> Meas
     }
 
     // discard the first measurement (if there were multiple trials)
+    // copy offline values from the first measurement to the second measurement
     if trials > 1 {
+        measurements[1].offline = measurements[0].offline.clone();
         measurements.remove(0);
     }
 

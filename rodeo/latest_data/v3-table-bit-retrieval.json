@@ -24,7 +24,7 @@
         "offline": {
           "uploadBytes": 0,
           "downloadBytes": 0,
-          "serverTimeMs": 25950,
+          "serverTimeMs": 25947,
           "clientTimeMs": 0,
           "simplepirPrepTimeMs": 21236,
           "simplepirHintBytes": 117440512,
@@ -33,25 +33,23 @@
         "online": {
           "uploadBytes": 866304,
           "downloadBytes": 12288,
-          "simplepirQueryBytes": 131072,
-          "doublepirQueryBytes": 229376,
           "simplepirRespBytes": 114688,
           "doublepirRespBytes": 12288,
-          "serverTimeMs": 129,
-          "clientQueryGenTimeMs": 1450,
+          "serverTimeMs": 128,
+          "clientQueryGenTimeMs": 1424,
           "clientDecodeTimeMs": 0,
           "firstPassTimeMs": 75,
           "secondPassTimeMs": 14,
-          "ringPackingTimeMs": 39,
+          "ringPackingTimeMs": 38,
           "sqrtNBytes": 32768,
           "allServerTimesMs": [
-            130,
-            128,
-            128,
             129,
-            129
+            128,
+            128,
+            128,
+            128
           ],
-          "stdDevServerTimeMs": 0.7483314773547883
+          "stdDevServerTimeMs": 0.4
         }
       }
     },
@@ -66,7 +64,7 @@
         "offline": {
           "uploadBytes": 0,
           "downloadBytes": 0,
-          "serverTimeMs": 45921,
+          "serverTimeMs": 45945,
           "clientTimeMs": 0,
           "simplepirPrepTimeMs": 41228,
           "simplepirHintBytes": 117440512,
@@ -75,22 +73,20 @@
         "online": {
           "uploadBytes": 997376,
           "downloadBytes": 12288,
-          "simplepirQueryBytes": 262144,
-          "doublepirQueryBytes": 229376,
           "simplepirRespBytes": 114688,
           "doublepirRespBytes": 12288,
-          "serverTimeMs": 205,
-          "clientQueryGenTimeMs": 1844,
+          "serverTimeMs": 206,
+          "clientQueryGenTimeMs": 1867,
           "clientDecodeTimeMs": 0,
           "firstPassTimeMs": 151,
           "secondPassTimeMs": 14,
-          "ringPackingTimeMs": 38,
+          "ringPackingTimeMs": 39,
           "sqrtNBytes": 32768,
           "allServerTimesMs": [
-            205,
             206,
             206,
             205,
+            206,
             205
           ],
           "stdDevServerTimeMs": 0.4898979485566356
@@ -108,7 +104,7 @@
         "offline": {
           "uploadBytes": 0,
           "downloadBytes": 0,
-          "serverTimeMs": 90555,
+          "serverTimeMs": 90803,
           "clientTimeMs": 0,
           "simplepirPrepTimeMs": 82378,
           "simplepirHintBytes": 234881024,
@@ -117,25 +113,23 @@
         "online": {
           "uploadBytes": 1259520,
           "downloadBytes": 12288,
-          "simplepirQueryBytes": 262144,
-          "doublepirQueryBytes": 458752,
           "simplepirRespBytes": 229376,
           "doublepirRespBytes": 12288,
-          "serverTimeMs": 371,
-          "clientQueryGenTimeMs": 3069,
+          "serverTimeMs": 373,
+          "clientQueryGenTimeMs": 2967,
           "clientDecodeTimeMs": 0,
           "firstPassTimeMs": 302,
-          "secondPassTimeMs": 27,
-          "ringPackingTimeMs": 38,
+          "secondPassTimeMs": 28,
+          "ringPackingTimeMs": 39,
           "sqrtNBytes": 65536,
           "allServerTimesMs": [
-            369,
             371,
-            373,
             371,
-            371
+            377,
+            374,
+            374
           ],
-          "stdDevServerTimeMs": 1.2649110640673518
+          "stdDevServerTimeMs": 2.244994432064365
         }
       }
     },
@@ -150,7 +144,7 @@
         "offline": {
           "uploadBytes": 0,
           "downloadBytes": 0,
-          "serverTimeMs": 177804,
+          "serverTimeMs": 178221,
           "clientTimeMs": 0,
           "simplepirPrepTimeMs": 170054,
           "simplepirHintBytes": 234881024,
@@ -159,25 +153,23 @@
         "online": {
           "uploadBytes": 1521664,
           "downloadBytes": 12288,
-          "simplepirQueryBytes": 524288,
-          "doublepirQueryBytes": 458752,
           "simplepirRespBytes": 229376,
           "doublepirRespBytes": 12288,
-          "serverTimeMs": 687,
-          "clientQueryGenTimeMs": 4023,
+          "serverTimeMs": 718,
+          "clientQueryGenTimeMs": 4200,
           "clientDecodeTimeMs": 0,
-          "firstPassTimeMs": 614,
-          "secondPassTimeMs": 28,
+          "firstPassTimeMs": 646,
+          "secondPassTimeMs": 29,
           "ringPackingTimeMs": 39,
           "sqrtNBytes": 65536,
           "allServerTimesMs": [
-            682,
-            692,
-            681,
-            676,
-            706
+            717,
+            720,
+            709,
+            714,
+            729
           ],
-          "stdDevServerTimeMs": 10.650821564555478
+          "stdDevServerTimeMs": 6.675327707311455
         }
       }
     },
@@ -192,7 +184,7 @@
         "offline": {
           "uploadBytes": 0,
           "downloadBytes": 0,
-          "serverTimeMs": 359816,
+          "serverTimeMs": 360509,
           "clientTimeMs": 0,
           "simplepirPrepTimeMs": 343301,
           "simplepirHintBytes": 469762048,
@@ -201,25 +193,23 @@
         "online": {
           "uploadBytes": 2045952,
           "downloadBytes": 12288,
-          "simplepirQueryBytes": 524288,
-          "doublepirQueryBytes": 917504,
           "simplepirRespBytes": 458752,
           "doublepirRespBytes": 12288,
-          "serverTimeMs": 1350,
-          "clientQueryGenTimeMs": 6474,
+          "serverTimeMs": 1334,
+          "clientQueryGenTimeMs": 6168,
           "clientDecodeTimeMs": 0,
-          "firstPassTimeMs": 1213,
-          "secondPassTimeMs": 57,
-          "ringPackingTimeMs": 39,
+          "firstPassTimeMs": 1205,
+          "secondPassTimeMs": 55,
+          "ringPackingTimeMs": 38,
           "sqrtNBytes": 131072,
           "allServerTimesMs": [
-            1310,
-            1316,
-            1385,
+            1301,
+            1305,
             1367,
-            1370
+            1349,
+            1349
           ],
-          "stdDevServerTimeMs": 30.558795787792423
+          "stdDevServerTimeMs": 26.339324213046925
         }
       }
     },
@@ -234,7 +224,7 @@
         "offline": {
           "uploadBytes": 0,
           "downloadBytes": 0,
-          "serverTimeMs": 681100,
+          "serverTimeMs": 682105,
           "clientTimeMs": 0,
           "simplepirPrepTimeMs": 665309,
           "simplepirHintBytes": 469762048,
@@ -243,25 +233,23 @@
         "online": {
           "uploadBytes": 2570240,
           "downloadBytes": 12288,
-          "simplepirQueryBytes": 1048576,
-          "doublepirQueryBytes": 917504,
           "simplepirRespBytes": 458752,
           "doublepirRespBytes": 12288,
-          "serverTimeMs": 2636,
-          "clientQueryGenTimeMs": 7669,
+          "serverTimeMs": 2620,
+          "clientQueryGenTimeMs": 7566,
           "clientDecodeTimeMs": 0,
-          "firstPassTimeMs": 2565,
+          "firstPassTimeMs": 2546,
           "secondPassTimeMs": 58,
           "ringPackingTimeMs": 39,
           "sqrtNBytes": 131072,
           "allServerTimesMs": [
-            2663,
-            2649,
-            2629,
-            2621,
-            2616
+            2645,
+            2639,
+            2611,
+            2603,
+            2602
           ],
-          "stdDevServerTimeMs": 17.72681584492827
+          "stdDevServerTimeMs": 18.33030277982336
         }
       }
     }
