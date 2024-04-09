@@ -1021,7 +1021,7 @@ pub fn pack_many_lwes<'a>(
             &params,
             params.poly_len_log2,
             &pack_pub_params_row_1s,
-            &b_values,
+            &b_values[i * params.poly_len..(i + 1) * params.poly_len],
             &precomp_res,
             &precomp_vals,
             &precomp_tables,

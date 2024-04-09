@@ -154,3 +154,8 @@ impl GetQPrime for LWEParams {
         }
     }
 }
+
+#[derive(Debug, Clone, Default)]
+pub struct YPIRParams {
+    pub is_simplepir: bool,
+}

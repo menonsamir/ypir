@@ -300,7 +300,7 @@ impl<'a> YClient<'a> {
         packing: bool,
         index_row: usize,
     ) -> Vec<u64> {
-        if public_seed_idx == SEED_0 {
+        if public_seed_idx == SEED_0 && !packing {
             let lwe_params = LWEParams::default();
             let dim = 1 << (dim_log2 + self.params.poly_len_log2);
 

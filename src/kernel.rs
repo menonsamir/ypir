@@ -146,15 +146,15 @@ mod test {
     fn test_fast_batched_dot_product_avx512() {
         let params = test_params();
 
-        const A_ROWS: usize = 8;
-        let a_cols = 2048;
+        const A_ROWS: usize = 1;
+        let a_cols = 131072;
         let b_rows = a_cols;
-        let b_cols = 4096;
+        let b_cols = 32768;
 
         let a = PolyMatrixRaw::random(&params, A_ROWS, a_cols);
         let mut b = AlignedMemory64::new(b_rows * b_cols);
         let mut c = AlignedMemory64::new(A_ROWS * b_cols);
-        let trials = 128;
+        let trials = 1;
         let mut sum = 0u64;
         let mut sum_time = 0;
         for _ in 0..trials {

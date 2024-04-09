@@ -62,7 +62,7 @@ fn main() {
         trials
     );
 
-    let measurement = run_ypir_batched(num_items, item_size_bits, num_clients, trials);
+    let measurement = run_ypir_batched(num_items, item_size_bits, num_clients, false, trials);
     println!(
         "Measurement completed. See the README for details on what the following fields mean."
     );

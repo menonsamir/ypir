@@ -149,7 +149,7 @@ pub struct OfflinePrecomputedValues<'a> {
     pub hint_1: Vec<u64>,
     pub pseudorandom_query_1: Vec<PolyMatrixNTT<'a>>,
     pub y_constants: (Vec<PolyMatrixNTT<'a>>, Vec<PolyMatrixNTT<'a>>),
-    pub smaller_server: YServer<'a, u16>,
+    pub smaller_server: Option<YServer<'a, u16>>,
     pub prepacked_lwe: Vec<Vec<PolyMatrixNTT<'a>>>,
     pub fake_pack_pub_params: Vec<PolyMatrixNTT<'a>>,
     pub precomp: Precomp<'a>,
@@ -162,6 +162,7 @@ pub struct YServer<'a, T> {
     db_buf_aligned: AlignedMemory64, // db_buf: Vec<u8>, // stored transposed
     phantom: PhantomData<T>,
     pad_rows: bool,
+    ypir_params: YPIRParams,
 }
 
 pub trait DbRowsPadded {
@@ -171,9 +172,9 @@ pub trait DbRowsPadded {
 impl DbRowsPadded for Params {
     fn db_rows_padded(&self) -> usize {
         let db_rows = 1 << (self.db_dim_1 + self.poly_len_log2);
-        // db_rows
-        let db_rows_padded = db_rows + db_rows / (16 * 8);
-        db_rows_padded
+        db_rows
+        // let db_rows_padded = db_rows + db_rows / (16 * 8);
+        // db_rows_padded
     }
 }
 
@@ -182,12 +183,20 @@ where
     T: Sized + Copy + ToU64 + Default,
     *const T: ToM512,
 {
-    pub fn new<'b, I>(params: &'a Params, mut db: I, inp_transposed: bool, pad_rows: bool) -> Self
+    pub fn new<'b, I>(
+        params: &'a Params,
+        mut db: I,
+        is_simplepir: bool,
+        inp_transposed: bool,
+        pad_rows: bool,
+    ) -> Self
     where
         I: Iterator<Item = T>,
     {
         // TODO: hack
         // let lwe_params = LWEParams::default();
+        let mut ypir_params = YPIRParams::default();
+        ypir_params.is_simplepir = is_simplepir;
         let bytes_per_pt_el = std::mem::size_of::<T>(); //1; //((lwe_params.pt_modulus as f64).log2() / 8.).ceil() as usize;
 
         let db_rows = 1 << (params.db_dim_1 + params.poly_len_log2);
@@ -244,6 +253,7 @@ where
             db_buf_aligned,
             phantom: PhantomData,
             pad_rows,
+            ypir_params,
         }
     }
 
@@ -379,7 +389,7 @@ where
             let sum_raw = sum.raw();
 
             // do negacyclic permutation (for first mul only)
-            if seed_idx == SEED_0 {
+            if seed_idx == SEED_0 && !self.ypir_params.is_simplepir {
                 let sum_raw_transformed =
                     negacyclic_perm(sum_raw.get_poly(0, 0), 0, self.params.modulus);
                 result.extend(&sum_raw_transformed);
@@ -426,13 +436,10 @@ where
         preprocessed_query
     }
 
-    pub fn answer_hint_ring(&self, public_seed_idx: u8) -> Vec<u64> {
+    pub fn answer_hint_ring(&self, public_seed_idx: u8, cols: usize) -> Vec<u64> {
         let preprocessed_query = self.generate_pseudorandom_query(public_seed_idx);
 
-        let now = Instant::now();
-        let db_cols = 1 << (self.params.db_dim_2 + self.params.poly_len_log2);
-        let res = self.multiply_with_db_ring(&preprocessed_query, 0..db_cols, public_seed_idx);
-        debug!("secondary hint in {} us", now.elapsed().as_micros());
+        let res = self.multiply_with_db_ring(&preprocessed_query, 0..cols, public_seed_idx);
 
         res
     }
@@ -549,6 +556,62 @@ where
         self.multiply_batched_with_db_packed::<K>(aligned_queries_packed, 1)
     }
 
+    pub fn perform_offline_precomputation_simplepir(
+        &self,
+        measurement: Option<&mut Measurement>,
+    ) -> OfflinePrecomputedValues {
+        // Set up some parameters
+
+        let params = self.params;
+        assert!(self.ypir_params.is_simplepir);
+
+        let db_cols = 1 << (params.db_dim_2 + params.poly_len_log2);
+        let num_rlwe_outputs = db_cols / params.poly_len;
+
+        // Begin offline precomputation
+
+        let now = Instant::now();
+        let hint_0: Vec<u64> = self.answer_hint_ring(SEED_0, db_cols);
+        // hint_0 is poly_len x db_cols
+        let simplepir_prep_time_ms = now.elapsed().as_millis();
+        if let Some(measurement) = measurement {
+            measurement.offline.simplepir_prep_time_ms = simplepir_prep_time_ms as usize;
+        }
+
+        let now = Instant::now();
+        let y_constants = generate_y_constants(&params);
+
+        let combined = [&hint_0[..], &vec![0u64; db_cols]].concat();
+        assert_eq!(combined.len(), db_cols * (params.poly_len + 1));
+        let prepacked_lwe = prep_pack_many_lwes(&params, &combined, num_rlwe_outputs);
+
+        let fake_pack_pub_params = generate_fake_pack_pub_params(&params);
+
+        let mut precomp: Precomp = Vec::new();
+        for i in 0..prepacked_lwe.len() {
+            let tup = precompute_pack(
+                params,
+                params.poly_len_log2,
+                &prepacked_lwe[i],
+                &fake_pack_pub_params,
+                &y_constants,
+            );
+            precomp.push(tup);
+        }
+        println!("Precomp in {} us", now.elapsed().as_micros());
+
+        OfflinePrecomputedValues {
+            hint_0,
+            hint_1: vec![],
+            pseudorandom_query_1: vec![],
+            y_constants,
+            smaller_server: None,
+            prepacked_lwe,
+            fake_pack_pub_params,
+            precomp,
+        }
+    }
+
     pub fn perform_offline_precomputation(
         &self,
         measurement: Option<&mut Measurement>,
@@ -557,6 +620,7 @@ where
 
         let params = self.params;
         let lwe_params = LWEParams::default();
+        assert!(!self.ypir_params.is_simplepir);
 
         let db_cols = 1 << (params.db_dim_2 + params.poly_len_log2);
 
@@ -644,11 +708,19 @@ where
         debug!("Done splitting intermediate cts.");
 
         // This is the 'intermediate' db after the first pass of PIR and expansion
-        let smaller_server: YServer<u16> =
-            YServer::<u16>::new(&self.smaller_params, smaller_db.into_iter(), true, false);
+        let smaller_server: YServer<u16> = YServer::<u16>::new(
+            &self.smaller_params,
+            smaller_db.into_iter(),
+            false,
+            true,
+            false,
+        );
         debug!("gen'd smaller server.");
 
-        let hint_1 = smaller_server.answer_hint_ring(SEED_1);
+        let hint_1 = smaller_server.answer_hint_ring(
+            SEED_1,
+            1 << (smaller_server.params.db_dim_2 + smaller_server.params.poly_len_log2),
+        );
         assert_eq!(hint_1.len(), params.poly_len * out_rows);
         assert_eq!(hint_1[special_offs], 0);
         assert_eq!(hint_1[special_offs + 1], 0);
@@ -659,8 +731,6 @@ where
         let combined = [&hint_1[..], &vec![0u64; out_rows]].concat();
         assert_eq!(combined.len(), out_rows * (params.poly_len + 1));
         let prepacked_lwe = prep_pack_many_lwes(&params, &combined, rho);
-        // let prep_packed_vals =
-        //     prep_pack_many_lwes_packed_vals(&params, &prepacked_lwe, rho, &y_constants);
 
         let now = Instant::now();
         let fake_pack_pub_params = generate_fake_pack_pub_params(&params);
@@ -683,11 +753,75 @@ where
             hint_1,
             pseudorandom_query_1,
             y_constants,
-            smaller_server,
+            smaller_server: Some(smaller_server),
             prepacked_lwe,
             fake_pack_pub_params,
             precomp,
         }
+    }
+
+    /// Perform SimplePIR-style YPIR
+    pub fn perform_online_computation_simplepir(
+        &self,
+        first_dim_queries_packed: &[u64],
+        offline_vals: &OfflinePrecomputedValues<'a>,
+        pack_pub_params_row_1s: &[&[PolyMatrixNTT<'a>]],
+        mut measurement: Option<&mut Measurement>,
+    ) -> Vec<Vec<u8>> {
+        assert!(self.ypir_params.is_simplepir);
+
+        // Set up some parameters
+
+        let params = self.params;
+
+        let y_constants = &offline_vals.y_constants;
+        let prepacked_lwe = &offline_vals.prepacked_lwe;
+        let precomp = &offline_vals.precomp;
+
+        // RLWE reduced moduli
+        let rlwe_q_prime_1 = params.get_q_prime_1();
+        let rlwe_q_prime_2 = params.get_q_prime_2();
+
+        let db_rows = 1 << (params.db_dim_1 + params.poly_len_log2);
+        let db_cols = 1 << (params.db_dim_2 + params.poly_len_log2);
+
+        assert_eq!(first_dim_queries_packed.len(), params.db_rows_padded());
+
+        // Begin online computation
+
+        debug!("Performing mul...");
+        let mut intermediate = AlignedMemory64::new(db_cols);
+        fast_batched_dot_product_avx512::<1, T>(
+            &params,
+            intermediate.as_mut_slice(),
+            first_dim_queries_packed,
+            db_rows,
+            self.db(),
+            db_rows,
+            db_cols,
+        );
+        debug!("Done w mul...");
+
+        let num_rlwe_outputs = db_cols / params.poly_len;
+        let packed = pack_many_lwes(
+            &params,
+            &prepacked_lwe,
+            &precomp,
+            intermediate.as_slice(),
+            num_rlwe_outputs,
+            &pack_pub_params_row_1s[0],
+            &y_constants,
+        );
+        debug!("Packed...");
+
+        let mut packed_mod_switched = Vec::with_capacity(packed.len());
+        for ct in packed.iter() {
+            let res = ct.raw();
+            let res_switched = res.switch(rlwe_q_prime_1, rlwe_q_prime_2);
+            packed_mod_switched.push(res_switched);
+        }
+
+        packed_mod_switched
     }
 
     pub fn perform_online_computation<const K: usize>(
@@ -743,7 +877,7 @@ where
         let hint_1_combined = &mut offline_vals.hint_1;
         let pseudorandom_query_1 = &offline_vals.pseudorandom_query_1;
         let y_constants = &offline_vals.y_constants;
-        let smaller_server = &mut offline_vals.smaller_server;
+        let smaller_server = offline_vals.smaller_server.as_mut().unwrap();
         let prepacked_lwe = &offline_vals.prepacked_lwe;
         let fake_pack_pub_params = &offline_vals.fake_pack_pub_params;
         let precomp = &offline_vals.precomp;
@@ -979,6 +1113,16 @@ where
 
     pub fn get_elem(&self, row: usize, col: usize) -> T {
         self.db()[col * self.db_rows_padded() + row] // stored transposed
+    }
+
+    pub fn get_row(&self, row: usize) -> Vec<T> {
+        let params = self.params;
+        let db_cols = 1 << (params.db_dim_2 + params.poly_len_log2);
+        let mut res = Vec::with_capacity(db_cols);
+        for col in 0..db_cols {
+            res.push(self.get_elem(row, col));
+        }
+        res
     }
 }
 
