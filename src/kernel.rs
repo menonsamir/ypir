@@ -147,9 +147,9 @@ mod test {
         let params = test_params();
 
         const A_ROWS: usize = 1;
-        let a_cols = 131072;
+        let a_cols = 32768;
         let b_rows = a_cols;
-        let b_cols = 32768;
+        let b_cols = 16384;
 
         let a = PolyMatrixRaw::random(&params, A_ROWS, a_cols);
         let mut b = AlignedMemory64::new(b_rows * b_cols);

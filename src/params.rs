@@ -119,6 +119,24 @@ pub fn params_for_scenario(num_items: usize, item_size_bits: usize) -> Params {
     internal_params_for(nu_1, nu_2, p, q2_bits, t_exp_left, DEF_MOD_STR)
 }
 
+pub fn params_for_scenario_simplepir(num_items: usize, item_size_bits: usize) -> Params {
+    let db_rows = num_items;
+    let db_cols = (item_size_bits as f64 / (2048.0 * 14.0)).ceil() as usize;
+
+    debug!("db_rows: {}, db_cols: {}", db_rows, db_cols);
+
+    let nu_1 = db_rows.next_power_of_two().trailing_zeros() as usize - 11;
+    debug!("chose nu_1: {}", nu_1);
+
+    let p = 1 << 14;
+    let q2_bits = 28;
+    let t_exp_left = 3;
+
+    let mut params = internal_params_for(nu_1, 1, p, q2_bits, t_exp_left, DEF_MOD_STR);
+    params.instances = db_cols;
+    params
+}
+
 pub trait GetQPrime {
     /// The smaller reduced modulus, used on the second row of the encoding
     fn get_q_prime_1(&self) -> u64;

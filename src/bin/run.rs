@@ -16,6 +16,10 @@ struct Args {
     /// Number of trials (optional, default 5)
     /// to run the YPIR scheme and average performance measurements over (a warmup trial is excluded)
     trials: Option<usize>,
+    /// Verbose mode (optional)
+    /// if set, run as SimplePIR
+    #[clap(long, short, action)]
+    is_simplepir: bool,
     /// Output report file (optional)
     /// where results will be written in JSON.
     out_report_json: Option<String>,
@@ -34,6 +38,7 @@ fn main() {
         trials,
         out_report_json,
         verbose,
+        is_simplepir,
     } = args;
 
     if verbose {
@@ -50,19 +55,25 @@ fn main() {
     let num_clients = num_clients.unwrap_or(1);
     let trials = trials.unwrap_or(5);
 
-    if item_size_bits > 8 {
+    if item_size_bits > 8 && !is_simplepir {
         panic!("Items can be at must be at most 8 bits.");
     }
 
+    if is_simplepir {
+        assert_eq!(num_clients, 1, "SimplePIR variant only supports 1 client.");
+    }
+
     println!(
-        "Running YPIR on a database of {} bits, and performing cross-client batching over {} clients. \n\
+        "Running YPIR ({}) on a database of {} bits, and performing cross-client batching over {} clients. \n\
         The server performance measurement will be averaged over {} trials.",
+        if is_simplepir { "w/ SimplePIR" } else { "w/ DoublePIR" },
         num_items * item_size_bits,
         num_clients,
         trials
     );
 
-    let measurement = run_ypir_batched(num_items, item_size_bits, num_clients, false, trials);
+    let measurement =
+        run_ypir_batched(num_items, item_size_bits, num_clients, is_simplepir, trials);
     println!(
         "Measurement completed. See the README for details on what the following fields mean."
     );

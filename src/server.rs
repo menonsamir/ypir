@@ -205,7 +205,11 @@ where
         } else {
             db_rows
         };
-        let db_cols = 1 << (params.db_dim_2 + params.poly_len_log2);
+        let db_cols = if is_simplepir {
+            params.instances * params.poly_len
+        } else {
+            1 << (params.db_dim_2 + params.poly_len_log2)
+        };
 
         let sz_bytes = db_rows_padded * db_cols * bytes_per_pt_el;
 
@@ -233,19 +237,24 @@ where
         }
 
         // Parameters for the second round (the "DoublePIR" round)
-        let lwe_params = LWEParams::default();
-        let pt_bits = (params.pt_modulus as f64).log2().floor() as usize;
-        let blowup_factor = lwe_params.q2_bits as f64 / pt_bits as f64;
-        let mut smaller_params = params.clone();
-        smaller_params.db_dim_1 = params.db_dim_2;
-        smaller_params.db_dim_2 = ((blowup_factor * (lwe_params.n + 1) as f64)
-            / params.poly_len as f64)
-            .log2()
-            .ceil() as usize;
+        let smaller_params = if is_simplepir {
+            params.clone()
+        } else {
+            let lwe_params = LWEParams::default();
+            let pt_bits = (params.pt_modulus as f64).log2().floor() as usize;
+            let blowup_factor = lwe_params.q2_bits as f64 / pt_bits as f64;
+            let mut smaller_params = params.clone();
+            smaller_params.db_dim_1 = params.db_dim_2;
+            smaller_params.db_dim_2 = ((blowup_factor * (lwe_params.n + 1) as f64)
+                / params.poly_len as f64)
+                .log2()
+                .ceil() as usize;
 
-        let out_rows = 1 << (smaller_params.db_dim_2 + params.poly_len_log2);
-        assert_eq!(smaller_params.db_dim_1, params.db_dim_2);
-        assert!(out_rows as f64 >= (blowup_factor * (lwe_params.n + 1) as f64));
+            let out_rows = 1 << (smaller_params.db_dim_2 + params.poly_len_log2);
+            assert_eq!(smaller_params.db_dim_1, params.db_dim_2);
+            assert!(out_rows as f64 >= (blowup_factor * (lwe_params.n + 1) as f64));
+            smaller_params
+        };
 
         Self {
             params,
@@ -265,6 +274,14 @@ where
         }
     }
 
+    pub fn db_cols(&self) -> usize {
+        if self.ypir_params.is_simplepir {
+            self.params.instances * self.params.poly_len
+        } else {
+            1 << (self.params.db_dim_2 + self.params.poly_len_log2)
+        }
+    }
+
     pub fn multiply_batched_with_db_packed<const K: usize>(
         &self,
         aligned_query_packed: &[u64],
@@ -272,7 +289,7 @@ where
     ) -> AlignedMemory64 {
         // let db_rows = 1 << (self.params.db_dim_1 + self.params.poly_len_log2);
         let db_rows_padded = self.db_rows_padded();
-        let db_cols = 1 << (self.params.db_dim_2 + self.params.poly_len_log2);
+        let db_cols = self.db_cols();
         assert_eq!(aligned_query_packed.len(), K * query_rows * db_rows_padded);
         assert_eq!(query_rows, 1);
 
@@ -297,7 +314,7 @@ where
         aligned_query_packed: &[u32],
     ) -> Vec<u32> {
         let _db_rows = 1 << (self.params.db_dim_1 + self.params.poly_len_log2);
-        let db_cols = 1 << (self.params.db_dim_2 + self.params.poly_len_log2);
+        let db_cols = self.db_cols();
         let db_rows_padded = self.db_rows_padded();
         assert_eq!(aligned_query_packed.len(), K * db_rows_padded);
         // assert_eq!(aligned_query_packed[db_rows + 1], 0);
@@ -446,7 +463,7 @@ where
 
     pub fn generate_hint_0(&self) -> Vec<u64> {
         let _db_rows = 1 << (self.params.db_dim_1 + self.params.poly_len_log2);
-        let db_cols = 1 << (self.params.db_dim_2 + self.params.poly_len_log2);
+        let db_cols = self.db_cols();
 
         let mut rng_pub = ChaCha20Rng::from_seed(get_seed(SEED_0));
         let lwe_params = LWEParams::default();
@@ -471,7 +488,7 @@ where
 
     pub fn generate_hint_0_ring(&self) -> Vec<u64> {
         let db_rows = 1 << (self.params.db_dim_1 + self.params.poly_len_log2);
-        let db_cols = 1 << (self.params.db_dim_2 + self.params.poly_len_log2);
+        let db_cols = self.db_cols();
 
         let lwe_params = LWEParams::default();
         let n = lwe_params.n;
@@ -565,7 +582,7 @@ where
         let params = self.params;
         assert!(self.ypir_params.is_simplepir);
 
-        let db_cols = 1 << (params.db_dim_2 + params.poly_len_log2);
+        let db_cols = params.instances * params.poly_len;
         let num_rlwe_outputs = db_cols / params.poly_len;
 
         // Begin offline precomputation
@@ -598,7 +615,7 @@ where
             );
             precomp.push(tup);
         }
-        println!("Precomp in {} us", now.elapsed().as_micros());
+        debug!("Precomp in {} us", now.elapsed().as_micros());
 
         OfflinePrecomputedValues {
             hint_0,
@@ -746,7 +763,7 @@ where
             );
             precomp.push(tup);
         }
-        println!("Precomp in {} us", now.elapsed().as_micros());
+        debug!("Precomp in {} us", now.elapsed().as_micros());
 
         OfflinePrecomputedValues {
             hint_0,
@@ -783,12 +800,13 @@ where
         let rlwe_q_prime_2 = params.get_q_prime_2();
 
         let db_rows = 1 << (params.db_dim_1 + params.poly_len_log2);
-        let db_cols = 1 << (params.db_dim_2 + params.poly_len_log2);
+        let db_cols = params.instances * params.poly_len;
 
         assert_eq!(first_dim_queries_packed.len(), params.db_rows_padded());
 
         // Begin online computation
 
+        let first_pass = Instant::now();
         debug!("Performing mul...");
         let mut intermediate = AlignedMemory64::new(db_cols);
         fast_batched_dot_product_avx512::<1, T>(
@@ -801,7 +819,12 @@ where
             db_cols,
         );
         debug!("Done w mul...");
+        let first_pass_time_ms = first_pass.elapsed().as_millis();
+        if let Some(ref mut m) = measurement {
+            m.online.first_pass_time_ms = first_pass_time_ms as usize;
+        }
 
+        let ring_packing = Instant::now();
         let num_rlwe_outputs = db_cols / params.poly_len;
         let packed = pack_many_lwes(
             &params,
@@ -813,6 +836,9 @@ where
             &y_constants,
         );
         debug!("Packed...");
+        if let Some(m) = measurement {
+            m.online.ring_packing_time_ms = ring_packing.elapsed().as_millis() as usize;
+        }
 
         let mut packed_mod_switched = Vec::with_capacity(packed.len());
         for ct in packed.iter() {
@@ -836,7 +862,7 @@ where
         let params = self.params;
         let lwe_params = LWEParams::default();
 
-        let db_cols = 1 << (params.db_dim_2 + params.poly_len_log2);
+        let db_cols = self.db_cols();
 
         // RLWE reduced moduli
         let rlwe_q_prime_1 = params.get_q_prime_1();
@@ -1116,13 +1142,18 @@ where
     }
 
     pub fn get_row(&self, row: usize) -> Vec<T> {
-        let params = self.params;
-        let db_cols = 1 << (params.db_dim_2 + params.poly_len_log2);
+        let db_cols = self.db_cols();
         let mut res = Vec::with_capacity(db_cols);
         for col in 0..db_cols {
             res.push(self.get_elem(row, col));
         }
         res
+        // // convert to u8 contiguously
+        // let mut res_u8 = Vec::with_capacity(db_cols * std::mem::size_of::<T>());
+        // for &x in res.iter() {
+        //     res_u8.extend_from_slice(&x.to_u64().to_le_bytes()[..std::mem::size_of::<T>()]);
+        // }
+        // res_u8
     }
 }
 

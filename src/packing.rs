@@ -423,7 +423,7 @@ pub fn pack_using_precomp_vals<'a>(
     precomp_tables: &[Vec<usize>],
     y_constants: &(Vec<PolyMatrixNTT<'a>>, Vec<PolyMatrixNTT<'a>>),
 ) -> PolyMatrixNTT<'a> {
-    let now = Instant::now();
+    // let now = Instant::now();
     // let mut working_set = vec![PolyMatrixNTT::zero(params, 1, 1); 1 << ell];
     let mut working_set = Vec::with_capacity(1 << (ell - 1));
     for _ in 0..(1 << (ell - 1)) {
@@ -435,7 +435,7 @@ pub fn pack_using_precomp_vals<'a>(
     let mut ct_sum_1 = PolyMatrixNTT::zero(params, 1, 1);
     let mut w_times_ginv_ct = PolyMatrixNTT::zero(params, 1, 1);
 
-    println!("time_-1: {} us", now.elapsed().as_micros());
+    // println!("time_-1: {} us", now.elapsed().as_micros());
 
     let mut time_0 = 0;
     let mut time_1 = 0;
@@ -522,17 +522,19 @@ pub fn pack_using_precomp_vals<'a>(
             }
         }
     }
-    let now = Instant::now();
+    // let now = Instant::now();
 
-    println!("time_0: {} us", time_0);
-    println!("time_1: {} us", time_1);
-    println!("time_2: {} us", time_2);
-    println!("time_3: {} us", time_3);
-    println!("time_4: {} us", time_4);
+    if false {
+        println!("time_0: {} us", time_0);
+        println!("time_1: {} us", time_1);
+        println!("time_2: {} us", time_2);
+        println!("time_3: {} us", time_3);
+        println!("time_4: {} us", time_4);
+        println!("idx_precomp: {}", idx_precomp);
+        println!("num_muls: {}", num_muls);
+    }
 
     assert_eq!(idx_precomp, precomp_vals.len());
-    println!("idx_precomp: {}", idx_precomp);
-    println!("num_muls: {}", num_muls);
 
     let mut resulting_row_1 = working_set[0].clone();
     fast_reduce(&mut resulting_row_1);
@@ -568,7 +570,7 @@ pub fn pack_using_precomp_vals<'a>(
         }
     }
     let out = out_raw.ntt();
-    println!("time_5: {} us", now.elapsed().as_micros());
+    // println!("time_5: {} us", now.elapsed().as_micros());
 
     // for z in 0..params.poly_len {
     //     let b_value = b_values[z];
@@ -1145,10 +1147,6 @@ pub fn generate_automorph_tables_brute_force(params: &Params) -> Vec<Vec<usize>>
         }
         tables.push(table_candidate);
     }
-    println!("tables[0]: {:?}", &tables[0][..32]);
-    println!("tables[1]: {:?}", &tables[1][..32]);
-    println!("tables[2]: {:?}", &tables[2][..32]);
-    println!("tables[3]: {:?}", &tables[3][..32]);
     tables
 }
 

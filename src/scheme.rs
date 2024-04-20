@@ -24,16 +24,6 @@ pub const STATIC_SEED_2: [u8; 32] = [
     2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-pub fn run_ypir<const K: usize>(
-    num_items: usize,
-    item_size_bits: usize,
-    is_simplepir: bool,
-    trials: usize,
-) -> Measurement {
-    let params = params_for_scenario(num_items, item_size_bits);
-    run_ypir_on_params::<K>(params, is_simplepir, trials)
-}
-
 pub fn run_ypir_batched(
     num_items: usize,
     item_size_bits: usize,
@@ -41,10 +31,11 @@ pub fn run_ypir_batched(
     is_simplepir: bool,
     trials: usize,
 ) -> Measurement {
-    let mut params = params_for_scenario(num_items, item_size_bits);
-    if is_simplepir {
-        params.pt_modulus = 256;
-    }
+    let params = if is_simplepir {
+        params_for_scenario_simplepir(num_items, item_size_bits)
+    } else {
+        params_for_scenario(num_items, item_size_bits)
+    };
     let measurement = match num_clients {
         1 => run_ypir_on_params::<1>(params, is_simplepir, trials),
         2 => run_ypir_on_params::<2>(params, is_simplepir, trials),
@@ -86,7 +77,7 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
     let is_simplepir = true;
     let db_rows = 1 << (params.db_dim_1 + params.poly_len_log2);
     let db_rows_padded = params.db_rows_padded();
-    let db_cols = 1 << (params.db_dim_2 + params.poly_len_log2);
+    let db_cols = params.instances * params.poly_len;
 
     let mut rng = thread_rng();
 
@@ -95,24 +86,26 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
     let rlwe_q_prime_2 = params.get_q_prime_2();
 
     // The number of bits represented by a plaintext RLWE coefficient
-    let pt_bits = (params.pt_modulus as f64).log2().floor() as usize;
+    // let pt_bits = (params.pt_modulus as f64).log2().floor() as usize;
 
     let num_rlwe_outputs = db_cols / params.poly_len;
 
     // --
 
     let now = Instant::now();
-    let pt_iter = std::iter::repeat_with(|| u8::sample());
-    let y_server = YServer::<u8>::new(&params, pt_iter, is_simplepir, false, true);
+    type T = u16;
+    let pt_iter = std::iter::repeat_with(|| (T::sample() as u64 % params.pt_modulus) as T);
+    let y_server = YServer::<T>::new(&params, pt_iter, is_simplepir, false, true);
     debug!("Created server in {} us", now.elapsed().as_micros());
     debug!(
         "Database of {} bytes",
-        y_server.db().len() * std::mem::size_of::<u8>()
+        y_server.db().len() * (params.pt_modulus as f64).log2().ceil() as usize / 8
     );
-    assert_eq!(
-        y_server.db().len() * std::mem::size_of::<u8>(),
-        db_rows_padded * db_cols * (params.pt_modulus as f64).log2().ceil() as usize / 8
-    );
+    // assert_eq!(
+    //     y_server.db().len() * std::mem::size_of::<T>(),
+    //     db_rows_padded * db_cols * (params.pt_modulus as f64).log2().ceil() as usize / 8
+    // );
+    assert_eq!(y_server.db().len(), db_rows_padded * db_cols);
 
     // ================================================================
     // OFFLINE PHASE
@@ -203,7 +196,7 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
             (&mut chunk_mut[..db_rows]).copy_from_slice(queries[i].2.as_slice());
         }
 
-        let mut offline_values = offline_values.clone();
+        let offline_values = offline_values.clone();
 
         // ================================================================
         // ONLINE PHASE
@@ -224,7 +217,11 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
             responses.iter().zip(queries.iter())
         {
             let (target_row, _target_col) = (target_idx / db_cols, target_idx % db_cols);
-            let corr_result = y_server.get_row(target_row);
+            let corr_result = y_server
+                .get_row(target_row)
+                .iter()
+                .map(|x| x.to_u64())
+                .collect::<Vec<_>>();
 
             // let scheme_params = YPIRSchemeParams::from_params(&params, &lwe_params);
             // let log2_corr_err = scheme_params.delta().log2();
@@ -252,12 +249,12 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
                 .collect::<Vec<_>>();
             assert_eq!(outer_ct.len(), num_rlwe_outputs * params.poly_len);
             // debug!("outer_ct: {:?}", &outer_ct[..]);
-            let outer_ct_t_u8 = u64s_to_contiguous_bytes(&outer_ct, pt_bits);
-            let final_result = outer_ct_t_u8.clone();
+            // let outer_ct_t_u8 = u64s_to_contiguous_bytes(&outer_ct, pt_bits);
+            let final_result = outer_ct.as_slice();
             measurement.online.client_decode_time_ms = start_decode.elapsed().as_millis() as usize;
 
-            debug!("got      {:?}", &final_result[..256]);
-            debug!("expected {:?}", &corr_result[..256]);
+            // debug!("got      {:?}", &final_result[..256]);
+            // debug!("expected {:?}", &corr_result[..256]);
             // debug!("got {:?}, expected {:?}", &final_result[..256], &corr_result[..256]);
             assert_eq!(final_result, corr_result);
         }
@@ -657,7 +654,17 @@ mod test {
 
     #[test]
     fn test_ypir_simplepir_basic() {
-        run_ypir_batched(1 << 30, 1, 1, true, 1);
+        run_ypir_batched(1 << 17, 65536 * 8, 1, true, 1);
+    }
+
+    #[test]
+    fn test_ypir_simplepir_rectangle() {
+        run_ypir_batched(1 << 16, 16384 * 8, 1, true, 1);
+    }
+
+    #[test]
+    fn test_ypir_simplepir_rectangle_8gb() {
+        run_ypir_batched(1 << 17, 65536 * 8, 1, true, 1);
     }
 
     #[test]

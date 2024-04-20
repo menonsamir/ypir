@@ -325,7 +325,11 @@ def download(scheme, scenario, x):
 
 
 def server_time(scheme, scenario, x):
-    if scheme == "simplepir*":
+    if scheme == "hintlesspir*":
+        return format_time(
+            scenario, x["online"]["firstPassTimeMs"] + x["online"]["ringPackingTimeMs"]
+        )
+    elif scheme == "simplepir*":
         return format_time(scenario, x["online"]["firstPassTimeMs"])
     elif scheme == "doublepir*":
         return format_time(
@@ -347,7 +351,12 @@ def val_throughput(scheme, scenario, x):
 
 
 def throughput(scheme, scenario, x):
-    if scheme == "simplepir*":
+    print("throughput", scheme)
+    if scheme == "hintlesspir*":
+        return format_tput(
+            scenario, x["online"]["firstPassTimeMs"] + x["online"]["ringPackingTimeMs"]
+        )
+    elif scheme == "simplepir*":
         return format_tput(scenario, x["online"]["firstPassTimeMs"])
     elif scheme == "doublepir*":
         return format_tput(
@@ -370,7 +379,6 @@ def table_1_bit_retrieval(args, data_files_json: list[str], output_type: str):
             "doublepir",
             "doublepir*",
             "hintlesspir",
-            "tiptoe",
             "ypir",
         ]
         nice_schemes = [
@@ -378,8 +386,7 @@ def table_1_bit_retrieval(args, data_files_json: list[str], output_type: str):
             "SimplePIR*",
             "DoublePIR",
             "DoublePIR*",
-            "HintlessPIR\\tnote{*}",
-            "Tiptoe",
+            "HintlessPIR",
             "YPIR",
         ]
         # schemes = ["simplepir*", "doublepir*", "ypir"]
@@ -430,28 +437,24 @@ def table_1_bit_retrieval(args, data_files_json: list[str], output_type: str):
             else:
                 row = padw("") + row
             for scheme in schemes:
-                if scheme == "hintlesspir" and metric == "Off. Download":
+                if "hintlesspir" in scheme and metric == "Off. Download":
                     row += "& " + padw(DASH)
                     continue
 
-                if scheme == "hintlesspir" and scenario not in scheme_results[scheme]:
-                    char = "-" if metric == "Off. Download" else "$\\ast$"
-                    row += "& " + padw(char)
-                    continue
-
-                if scheme == "hintlesspir" and (
-                    metric == "Throughput"
-                    or metric == "Prep. Throughput"
-                    or metric == "Server Time"
-                ):
-                    row += "& " + padw("$\\ast$")
-                    continue
+                # if "hintlesspir" in scheme and scenario not in scheme_results[scheme]:
+                #     char = "-" if metric == "Off. Download" else "$\\ast$"
+                #     row += "& " + padw(char)
+                #     continue
 
                 res = None
                 if scheme not in scheme_results:
                     if "*" in scheme:
-                        # use YPIR for *-variants
-                        res = scheme_results["ypir"][scenario]
+                        # use stripped name for *-variants
+                        stripped_scheme = scheme[:-1]
+                        if stripped_scheme != "hintlesspir":
+                            # use YPIR measurements for simplepir* and doublepir*
+                            stripped_scheme = "ypir"
+                        res = scheme_results[stripped_scheme][scenario]
                     else:
                         assert False, f"Unknown scheme: {scheme}"
                 elif scenario not in scheme_results[scheme]:
@@ -474,7 +477,134 @@ def table_1_bit_retrieval(args, data_files_json: list[str], output_type: str):
     print(output)
 
 
-# output as Latex table using Pandas
+def plot_large_items(args, data_files_json: list[str], output_type: str):
+    scheme_results, all_scenarios = gather_1_bit_retrieval_data(data_files_json)
+    print(scheme_results)
+    # assert output_type == "tex"
+
+    schemes = ["simplepir", "hintlesspir", "ypir-sp"]
+    nice_schemes = ["SimplePIR", "HintlessPIR", "YPIR+SimplePIR"]
+    if args.star_variants:
+        schemes = ["simplepir", "hintlesspir", "hintlesspir*", "ypir-sp"]
+        nice_schemes = ["SimplePIR", "HintlessPIR", "HintlessPIR+", "YPIR+SimplePIR"]
+
+    # generate table
+    disp_width = 40
+    padw = lambda s: pad(s, disp_width)
+    output = (
+        padw("\\textbf{Database}")
+        + "& "
+        + padw("\\textbf{Metric}")
+        + "& "
+        + "& ".join([padw("\\textbf{" + scheme + "}") for scheme in nice_schemes])
+        + "\\\\ \\midrule\n"
+    )
+
+    db_keys = [
+        "$2^{15} \\times 32\ \\text{KB}$",
+        "$2^{18} \\times 32\ \\text{KB}$",
+        "$2^{19} \\times 64\ \\text{KB}$",
+    ]
+
+    db_scenarios = {
+        db_keys[0]: (32768, 262144),
+        db_keys[1]: (131072, 524288),
+        db_keys[2]: (262144, 1048576),
+    }
+
+    db_caption = {
+        db_keys[0]: "(1 GB)",
+        db_keys[1]: "(8 GB)",
+        db_keys[2]: "(32 GB)",
+    }
+
+    alt_scenarios = {
+        (32768, 262144): (8589934592, 1),
+        (131072, 524288): (68719476736, 1),
+        (262144, 1048576): (274877906944, 1),
+    }
+
+    metrics = {
+        "Prep. Throughput": prep_tput,
+        "Off. Download": off_download,
+        "Upload": upload,
+        "Download": download,
+        "Server Time": server_time,
+        "Throughput": throughput,
+    }
+
+    metric_keys = [
+        "Prep. Throughput",
+        "Off. Download",
+        "Upload",
+        "Download",
+        "Server Time",
+        "Throughput",
+    ]
+
+    for db_sz in db_keys:
+        scenario = db_scenarios[db_sz]
+        for metric in metric_keys:
+            row = "& " + padw("{\\bf " + metric + "}")
+            if metric == "Upload":
+                row = padw("{ " + db_sz + "}") + row
+            elif metric == "Download":
+                row = padw(db_caption[db_sz]) + row
+            else:
+                row = padw("") + row
+            for scheme in schemes:
+                if scheme == "hintlesspir" and metric == "Off. Download":
+                    row += "& " + padw(DASH)
+                    continue
+
+                if scheme == "hintlesspir" and scenario not in scheme_results[scheme]:
+                    row += "& " + padw(DASH)
+                    continue
+
+                # if scheme == "hintlesspir" and (
+                #     metric == "Throughput"
+                #     or metric == "Prep. Throughput"
+                #     or metric == "Server Time"
+                # ):
+                #     row += "& " + padw(DASH)
+                #     continue
+
+                res = None
+
+                # if scheme not in scheme_results:
+                #     assert False, f"Unknown scheme: {scheme}"
+
+                stripped_scheme = scheme
+                if "*" in scheme:
+                    # use stripped name for *-variants
+                    stripped_scheme = scheme[:-1]
+
+                if (
+                    scenario not in scheme_results[stripped_scheme]
+                    and scenario not in alt_scenarios
+                ):
+                    row += "& " + padw(DASH)
+                    continue
+
+                maybe_scenario = scenario
+                if scenario not in scheme_results[stripped_scheme]:
+                    maybe_scenario = alt_scenarios[scenario]
+
+                res = scheme_results[stripped_scheme][maybe_scenario]
+
+                row += "& " + padw(metrics[metric](scheme, maybe_scenario, res))
+            row += "\\\\"
+            if metric == "Off. Download":
+                row += f" \\cmidrule{{2-{len(schemes) + 2}}}"
+
+            if metric == "Throughput":
+                if db_sz != list(db_scenarios.keys())[-1]:
+                    row += " \\midrule"
+                else:
+                    row += " \\bottomrule"
+            output += row + "\n"
+
+    print(output)
 
 
 def plot_ccb(data_files_json: list[str], output_type: str):
@@ -1061,6 +1191,7 @@ figures = {
     "query-breakdown": query_breakdown,
     "ccb-rlwe": plot_ccb_rlwe,
     "sct": plot_sct,
+    "large-items": plot_large_items,
 }
 
 
@@ -1119,3 +1250,5 @@ if __name__ == "__main__":
         query_breakdown(args.data_files_json, args.output_type)
     elif args.figure == "sct":
         plot_sct(args.data_files_json, args.output_type)
+    elif args.figure == "large-items":
+        plot_large_items(args, args.data_files_json, args.output_type)
