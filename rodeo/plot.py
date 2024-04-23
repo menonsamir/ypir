@@ -8,7 +8,8 @@ from calendar import c
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import tikzplotlib
+
+# import tikzplotlib
 
 scheme_styles = {
     "ypir": {"color": "red"},
@@ -304,6 +305,15 @@ def off_download(scheme, scenario, x):
         return format_bytes(x["offline"]["downloadBytes"])
 
 
+def val_off_download(scheme, scenario, x):
+    if scheme == "simplepir*":
+        return x["offline"]["simplepirHintBytes"]
+    elif scheme == "doublepir*":
+        return x["offline"]["doublepirHintBytes"]
+    else:
+        return x["offline"]["downloadBytes"]
+
+
 def upload(scheme, scenario, x):
     if scheme == "simplepir*":
         return format_bytes(x["online"]["simplepirQueryBytes"])
@@ -322,6 +332,24 @@ def download(scheme, scenario, x):
         return format_bytes(x["online"]["doublepirRespBytes"])
     else:
         return format_bytes(calc_download(scheme, scenario, x))
+
+
+def val_download(scheme, scenario, x):
+    if scheme == "simplepir*":
+        return x["online"]["simplepirRespBytes"]
+    elif scheme == "doublepir*":
+        return x["online"]["doublepirRespBytes"]
+    else:
+        return calc_download(scheme, scenario, x)
+
+
+def val_upload(scheme, scenario, x):
+    if scheme == "simplepir*":
+        return x["online"]["simplepirQueryBytes"]
+    elif scheme == "doublepir*":
+        return x["online"]["simplepirQueryBytes"] + x["online"]["doublepirQueryBytes"]
+    else:
+        return x["online"]["uploadBytes"]
 
 
 def server_time(scheme, scenario, x):
@@ -605,6 +633,113 @@ def plot_large_items(args, data_files_json: list[str], output_type: str):
             output += row + "\n"
 
     print(output)
+
+
+def plot_comm_comp_tradeoff(args, data_files_json: list[str], output_type: str):
+    # first get all the data
+    scheme_results, all_scenarios = gather_1_bit_retrieval_data(data_files_json)
+
+    schemes = ["simplepir*", "doublepir*", "ypir"]
+
+    # we have 1, 2, 4, 8, 16, and 32 GB
+    # we'll consider 32 x 1 GB, 16 x 2 GB, etc
+    # we want to gather the (throughput, total comm.) pairs for every instantiation
+    # then plot in a scatter
+    db_sz_to_scenario = {
+        0.125: (1073741824, 1),
+        0.25: (2147483648, 1),
+        0.5: (4294967296, 1),
+        1.0: (8589934592, 1),
+        2.0: (17179869184, 1),
+        4.0: (34359738368, 1),
+        8.0: (68719476736, 1),
+        16.0: (137438953472, 1),
+        32.0: (274877906944, 1),
+    }
+    db_configs = [(32/x, x) for x in db_sz_to_scenario.keys()]
+    print(db_configs)
+    off_comms = {}
+    scheme_points = {}
+    for scheme in schemes:
+        scheme_points[scheme] = []
+        off_comms[scheme] = []
+    for instances, db_sz in db_configs:
+        instances = int(instances)
+        scenario = db_sz_to_scenario[db_sz]
+        for scheme in schemes:
+            scheme_to_use = "ypir"
+            if scenario not in scheme_results[scheme_to_use]:
+                continue
+            res = scheme_results[scheme_to_use][scenario]
+            throughput = val_throughput(scheme, scenario, res)
+            up = val_upload(scheme, scenario, res)
+            down = val_download(scheme, scenario, res)
+            total_comm = up + instances * down
+            scheme_points[scheme].append((throughput, total_comm))
+
+            off_comm = instances * val_off_download(scheme, scenario, res)
+            off_comms[scheme].append(off_comm)
+
+    for scheme in schemes:
+        scheme_points[scheme] = list(set(scheme_points[scheme]))
+    print(scheme_points)
+    # interesting bit: remove 'dominated' points
+    # for a given scheme, if there's a point
+    # that has higher throughput *and* lower
+    # comm. than another point, remove the latter
+    remove_dominated = True
+    if remove_dominated:
+        dominates = lambda p1, p2: p1[0] >= p2[0] and p1[1] <= p2[1]
+        for scheme in schemes:
+            while True:
+                points = scheme_points[scheme]
+                to_remove_idxs = set()
+                for i in range(len(points)):
+                    for j in range(len(points)):
+                        if i == j:
+                            continue
+                        if dominates(points[i], points[j]):
+                            print("Removing " + scheme + "  " + str(points[j]))
+                            print("(dominated by " + str(points[i]) + ")")
+                            to_remove_idxs.add(j)
+                if len(to_remove_idxs) == 0:
+                    break
+                to_remove_idxs = list(set(to_remove_idxs))
+                to_remove_idxs.sort(reverse=True)
+                for idx in to_remove_idxs:
+                    del scheme_points[scheme][idx]
+                    del off_comms[scheme][idx]
+            scheme_points[scheme].sort()
+
+    for scheme in schemes:
+        print("Max off. comm. for " + scheme + ": " + str(max(off_comms[scheme])))
+        print("Min off. comm. for " + scheme + ": " + str(min(off_comms[scheme])))
+
+    # matplotlib lines
+    fig, ax = plt.subplots()
+    for scheme in schemes:
+        xs = [x[1] for x in scheme_points[scheme]]
+        ys = [x[0] for x in scheme_points[scheme]]
+        # ax.scatter(xs, ys, label=scheme, **scheme_styles[scheme])
+        # plot lines with dots
+        ax.plot(xs, ys, label=scheme, **scheme_styles[scheme], marker="o")
+
+    ax.set_xlabel("Total Communication (B)")
+    ax.set_ylabel("Throughput (GB/s)")
+    # add legend in south west
+    ax.legend(loc="lower left")
+    # set y axis to start at 0
+    ax.set_ylim(bottom=0)
+    # invert the x axis (comm)
+    ax.invert_xaxis()
+    plt.savefig("rodeo/plot.pdf")
+
+    for scheme in schemes:
+        print()
+        print("\\addplot [" + scheme + "]\ntable {%")
+        for point in scheme_points[scheme]:
+            print(f"{point[1]/(1<<20)} {point[0]}")
+        print("")
 
 
 def plot_ccb(data_files_json: list[str], output_type: str):
@@ -1192,6 +1327,7 @@ figures = {
     "ccb-rlwe": plot_ccb_rlwe,
     "sct": plot_sct,
     "large-items": plot_large_items,
+    "comm-comp-tradeoff": plot_comm_comp_tradeoff,
 }
 
 
@@ -1232,7 +1368,7 @@ def parse_args():
 
 
 # ex:
-# python rodeo/plot.py --output-type tex table-bit-retrieval rodeo/output-pow2.json ../simplepir/rodeo/doublepir-full-2.json  ../simplepir/rodeo/simplepir-32GB.json ../simplepir/rodeo/doublepir-32GB.json ../simplepir/rodeo/simplepir-full-2.json  rodeo/output-64GB.json
+# python rodeo/plot.py --output-type tex table-bit-retrieval rodeo/data/*.json rodeo/latest_data/v3-*
 if __name__ == "__main__":
     args = parse_args()
 
@@ -1252,3 +1388,5 @@ if __name__ == "__main__":
         plot_sct(args.data_files_json, args.output_type)
     elif args.figure == "large-items":
         plot_large_items(args, args.data_files_json, args.output_type)
+    elif args.figure == "comm-comp-tradeoff":
+        plot_comm_comp_tradeoff(args, args.data_files_json, args.output_type)
