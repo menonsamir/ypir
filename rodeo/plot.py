@@ -19,6 +19,8 @@ scheme_styles = {
     "doublepir*": {"color": "royalblue"},
     "zpir": {"color": "yellow"},
     "tiptoe": {"color": "purple"},
+    "hintlesspir": {"color": "orange"},
+    "hintlesspir*": {"color": "teal"},
 }
 
 replace = {
@@ -29,6 +31,8 @@ replace = {
     "semithick, royalblue": "doublepirstar",
     "semithick, yellow": "zpir",
     "semithick, purple": "tiptoe",
+    "semithick, orange": "hintlesspir",
+    "semithick, teal": "hintlesspir*",
     "\\addplot [ypir]": "\\addlegendentry{\ypir}\n\\addplot [ypir]",
     "\\addplot [zpir]": "\\addlegendentry{\zpir}\n\\addplot [zpir]",
     "\\addplot [simplepir]": "\\addlegendentry{\simplepir}\n\\addplot [simplepir]",
@@ -36,6 +40,8 @@ replace = {
     "\\addplot [simplepirstar]": "\\addlegendentry{\simplepirstar}\n\\addplot [simplepirstar]",
     "\\addplot [doublepirstar]": "\\addlegendentry{\doublepirstar}\n\\addplot [doublepirstar]",
     "\\addplot [tiptoe]": "\\addlegendentry{\\tiptoe}\n\\addplot [tiptoe]",
+    "\\addplot [hintlesspir]": "\\addlegendentry{\\hintlesspir}\n\\addplot [hintlesspir]",
+    "\\addplot [hintlesspirplus]": "\\addlegendentry{\\hintlesspirplus}\n\\addplot [hintlesspirplus]",
 }
 
 # can change this size to 1000 if desired
@@ -136,11 +142,21 @@ def gather_1_bit_retrieval_data(data_files_json: list[str]):
 
 
 def plot_1_bit_retrieval(data_files_json: list[str], output_type: str):
-    scheme_results, all_scenarios = gather_1_bit_retrieval_data(data_files_json)
+    filtered_data_files_json = [x for x in data_files_json if "large-items" not in x]
+    scheme_results, all_scenarios = gather_1_bit_retrieval_data(
+        filtered_data_files_json
+    )
     print("all_scenarios", all_scenarios)
 
     # schemes = ["simplepir", "doublepir", "simplepir*", "doublepir*", "ypir"]
-    schemes = ["simplepir*", "doublepir*", "tiptoe", "ypir"]
+    schemes = [
+        "simplepir*",
+        "doublepir*",
+        "tiptoe",
+        "hintlesspir",
+        "hintlesspir*",
+        "ypir",
+    ]
 
     # plot
     fig, ax = plt.subplots()
@@ -151,8 +167,6 @@ def plot_1_bit_retrieval(data_files_json: list[str], output_type: str):
         else:
             assert "*" in scheme, f"Unknown scheme: {scheme}"
             results = scheme_results["ypir"]
-        if scheme == "hintlesspir":
-            continue
         xs = []
         ys = []
         for scenario in all_scenarios:

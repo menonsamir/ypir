@@ -27,6 +27,8 @@ pub struct Offline {
 pub struct Online {
     pub upload_bytes: usize,
     pub download_bytes: usize,
+    pub simplepir_query_bytes: usize,
+    pub doublepir_query_bytes: usize,
     pub simplepir_resp_bytes: usize,
     pub doublepir_resp_bytes: usize,
     pub server_time_ms: usize,

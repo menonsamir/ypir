@@ -410,6 +410,8 @@ pub fn run_ypir_on_params<const K: usize>(
         measurement.offline.server_time_ms = offline_server_time_ms as usize;
         measurement.offline.simplepir_hint_bytes = simplepir_hint_bytes;
         measurement.offline.doublepir_hint_bytes = doublepir_hint_bytes;
+        measurement.online.simplepir_query_bytes = simplepir_query_bytes;
+        measurement.online.doublepir_query_bytes = doublepir_query_bytes;
         measurement.online.simplepir_resp_bytes = simplepir_resp_bytes;
         measurement.online.doublepir_resp_bytes = doublepir_resp_bytes;
 

@@ -10,6 +10,40 @@ log q = 90
 log Q = 32
 ```
 
+## DB sizes
+```
+ 1 GB: 32768 x 32768
+ 2 GB: 32768 x 65536
+ 4 GB: 32768 x 131072
+ 8 GB: 32768 x 262144
+16 GB: 65536 x 262144
+32 GB: 65536 x 524288
+
+1GB DB (32768 x 32768):
+Upload: 499712 bytes
+Download: 1789952 bytes
+
+2GB DB (32768 x 65536):
+Upload: 630784 bytes
+Download: 1789952 bytes
+
+4GB DB (32768 x 131072):
+Upload: 892928 bytes
+Download: 1789952 bytes
+
+8GB DB (32768 x 262144):
+Upload: 1417216 bytes
+Download: 1789952 bytes
+
+16GB DB (65536 x 262144):
+Upload: 1417216 bytes
+Download: 3395584 bytes
+
+32GB DB (65536 x 524288):
+Upload: 2465792 bytes
+Download: 3395584 bytes
+```
+
 ## Query
 for 16384x16384:
 = ((2 + 6) * (4096 * 90) + 2^14 * 32)/8 
