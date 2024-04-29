@@ -8,8 +8,7 @@ from calendar import c
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
-# import tikzplotlib
+import tikzplotlib
 
 scheme_styles = {
     "ypir": {"color": "red"},
@@ -32,7 +31,7 @@ replace = {
     "semithick, yellow": "zpir",
     "semithick, purple": "tiptoe",
     "semithick, orange": "hintlesspir",
-    "semithick, teal": "hintlesspir*",
+    "semithick, teal": "hintlesspirplus",
     "\\addplot [ypir]": "\\addlegendentry{\ypir}\n\\addplot [ypir]",
     "\\addplot [zpir]": "\\addlegendentry{\zpir}\n\\addplot [zpir]",
     "\\addplot [simplepir]": "\\addlegendentry{\simplepir}\n\\addplot [simplepir]",
@@ -141,6 +140,17 @@ def gather_1_bit_retrieval_data(data_files_json: list[str]):
     return scheme_results, all_scenarios
 
 
+def get_underlying_data_scheme(scheme):
+    if scheme == "simplepir*":
+        return "ypir"
+    elif scheme == "doublepir*":
+        return "ypir"
+    elif scheme == "hintlesspir*":
+        return "hintlesspir"
+    else:
+        return scheme
+
+
 def plot_1_bit_retrieval(data_files_json: list[str], output_type: str):
     filtered_data_files_json = [x for x in data_files_json if "large-items" not in x]
     scheme_results, all_scenarios = gather_1_bit_retrieval_data(
@@ -166,7 +176,7 @@ def plot_1_bit_retrieval(data_files_json: list[str], output_type: str):
             results = scheme_results[scheme]
         else:
             assert "*" in scheme, f"Unknown scheme: {scheme}"
-            results = scheme_results["ypir"]
+            results = scheme_results[get_underlying_data_scheme(scheme)]
         xs = []
         ys = []
         for scenario in all_scenarios:
@@ -261,6 +271,13 @@ def format_time(scenario: tuple, server_time_ms: int) -> str:
     if server_time_ms < MS_PER_S:
         return f"{server_time_ms:.0f} ms"
     elif server_time_ms <= MS_PER_S * 60 * 60 * 5:
+        return f"{server_time_ms / MS_PER_S:.2f} s"
+    else:
+        return f"{server_time_ms / (MS_PER_S * 60 * 60):.0f} h"
+
+
+def alt_format_time(scenario: tuple, server_time_ms: int) -> str:
+    if server_time_ms <= MS_PER_S * 60 * 60 * 5:
         return f"{server_time_ms / MS_PER_S:.2f} s"
     else:
         return f"{server_time_ms / (MS_PER_S * 60 * 60):.0f} h"
@@ -381,8 +398,16 @@ def server_time(scheme, scenario, x):
         return format_time(scenario, x["online"]["serverTimeMs"])
 
 
+def alt_server_time(scheme, scenario, x):
+    return alt_format_time(scenario, x["online"]["serverTimeMs"])
+
+
 def val_throughput(scheme, scenario, x):
-    if scheme == "simplepir*":
+    if scheme == "hintlesspir*":
+        return calc_tput(
+            scenario, x["online"]["firstPassTimeMs"] + x["online"]["ringPackingTimeMs"]
+        )
+    elif scheme == "simplepir*":
         return calc_tput(scenario, x["online"]["firstPassTimeMs"])
     elif scheme == "doublepir*":
         return calc_tput(
@@ -408,6 +433,14 @@ def throughput(scheme, scenario, x):
         return format_tput(scenario, x["online"]["serverTimeMs"])
 
 
+def rate(scheme, scenario, x):
+    # ratio of plaintext item size to ciphertext item size
+    plaintext_item_size = 256  # scenario[1] / 8  # bits to bytes
+    ciphertext_item_size = x["online"]["downloadBytes"]
+    rate_val = plaintext_item_size / ciphertext_item_size
+    return f"{rate_val:.4f}"
+
+
 def table_1_bit_retrieval(args, data_files_json: list[str], output_type: str):
     disp_width = 30
     padw = lambda s: pad(s, disp_width)
@@ -421,6 +454,7 @@ def table_1_bit_retrieval(args, data_files_json: list[str], output_type: str):
             "doublepir",
             "doublepir*",
             "hintlesspir",
+            "hintlesspir*",
             "ypir",
         ]
         nice_schemes = [
@@ -429,6 +463,7 @@ def table_1_bit_retrieval(args, data_files_json: list[str], output_type: str):
             "DoublePIR",
             "DoublePIR*",
             "HintlessPIR",
+            "HintlessPIR+",
             "YPIR",
         ]
         # schemes = ["simplepir*", "doublepir*", "ypir"]
@@ -530,6 +565,10 @@ def plot_large_items(args, data_files_json: list[str], output_type: str):
         schemes = ["simplepir", "hintlesspir", "hintlesspir*", "ypir-sp"]
         nice_schemes = ["SimplePIR", "HintlessPIR", "HintlessPIR+", "YPIR+SimplePIR"]
 
+    if args.respire:
+        schemes = ["ypir-sp"]
+        nice_schemes = ["YPIR+SimplePIR"]
+
     # generate table
     disp_width = 40
     padw = lambda s: pad(s, disp_width)
@@ -583,6 +622,33 @@ def plot_large_items(args, data_files_json: list[str], output_type: str):
         "Server Time",
         "Throughput",
     ]
+
+    if args.respire:
+        db_keys = [
+            "$2^{14} \\times 16\ \\text{KB}$",
+            "$2^{15} \\times 32\ \\text{KB}$",
+            "$2^{17} \\times 64\ \\text{KB}$",
+        ]
+        db_scenarios = {
+            db_keys[0]: (16384, 131072),
+            db_keys[1]: (32768, 262144),
+            db_keys[2]: (131072, 524288),
+        }
+        db_caption = {
+            db_keys[0]: "(256 MB)",
+            db_keys[1]: "(1 GB)",
+            db_keys[2]: "(8 GB)",
+        }
+        metrics["Rate"] = rate
+        metrics["Server Time"] = alt_server_time
+        metric_keys = [
+            "Off. Download",
+            "Upload",
+            "Download",
+            "Server Time",
+            "Rate",
+            "Throughput",
+        ]
 
     for db_sz in db_keys:
         scenario = db_scenarios[db_sz]
@@ -653,7 +719,7 @@ def plot_comm_comp_tradeoff(args, data_files_json: list[str], output_type: str):
     # first get all the data
     scheme_results, all_scenarios = gather_1_bit_retrieval_data(data_files_json)
 
-    schemes = ["simplepir*", "doublepir*", "ypir"]
+    schemes = ["simplepir*", "doublepir*", "hintlesspir", "hintlesspir*", "ypir"]
 
     # we have 1, 2, 4, 8, 16, and 32 GB
     # we'll consider 32 x 1 GB, 16 x 2 GB, etc
@@ -670,7 +736,7 @@ def plot_comm_comp_tradeoff(args, data_files_json: list[str], output_type: str):
         16.0: (137438953472, 1),
         32.0: (274877906944, 1),
     }
-    db_configs = [(32/x, x) for x in db_sz_to_scenario.keys()]
+    db_configs = [(32 / x, x) for x in db_sz_to_scenario.keys()]
     print(db_configs)
     off_comms = {}
     scheme_points = {}
@@ -681,7 +747,7 @@ def plot_comm_comp_tradeoff(args, data_files_json: list[str], output_type: str):
         instances = int(instances)
         scenario = db_sz_to_scenario[db_sz]
         for scheme in schemes:
-            scheme_to_use = "ypir"
+            scheme_to_use = get_underlying_data_scheme(scheme)
             if scenario not in scheme_results[scheme_to_use]:
                 continue
             res = scheme_results[scheme_to_use][scenario]
@@ -817,7 +883,7 @@ def plot_ccb(data_files_json: list[str], output_type: str):
             all_scenarios = all_scenarios.union(results.keys())
     all_scenarios = sorted(list(all_scenarios))
 
-    schemes = ["simplepir*", "doublepir*", "ypir"]
+    schemes = ["simplepir*", "doublepir*", "hintlesspir*", "ypir"]
 
     # plot
     fig, ax = plt.subplots()
@@ -827,7 +893,7 @@ def plot_ccb(data_files_json: list[str], output_type: str):
             results = scheme_results[scheme]
         else:
             assert "*" in scheme, f"Unknown scheme: {scheme}"
-            results = scheme_results["ypir"]
+            results = scheme_results["ypir"]  # on purpose
         xs = []
         ys = []
         for scenario in all_scenarios:
@@ -838,6 +904,16 @@ def plot_ccb(data_files_json: list[str], output_type: str):
             scenario_traditional = (scenario * db_size_gb * GB_SZ * 8, 1)
             print(scenario, scenario_traditional)
             throughput = val_throughput(scheme, scenario_traditional, measurement)
+            if scheme == "hintlesspir*":
+                print(scheme_results["hintlesspir"])
+                total_packing_time = (
+                    scenario
+                    * scheme_results["hintlesspir"][1]["online"]["ringPackingTimeMs"]
+                )
+                print("total_packing_time", total_packing_time)
+                matmul_time = scheme_results["ypir"][scenario]["online"]["serverTimeMs"]
+                total_time = total_packing_time + matmul_time
+                throughput = scenario * db_size_gb / (total_time / MS_PER_S)
             print(
                 "!",
                 scheme,
@@ -854,6 +930,7 @@ def plot_ccb(data_files_json: list[str], output_type: str):
                 measurement["online"]["serverTimeMs"],
             )
             ys.append(throughput)
+        print(scheme, list(xs), list(ys))
         if scheme in scheme_styles:
             ax.plot(
                 xs,
@@ -1268,7 +1345,7 @@ def plot_sct(data_files_json: list[str], output_type: str):
             + off_download_cost(sch, s, x["offline"]["downloadBytes"])
         ),
         "Computation Cost": lambda sch, s, x: cost_str(
-            cpu_cost(x["online"]["serverTimeMs"] if scheme != "hintlesspir" else 0)
+            cpu_cost(x["online"]["serverTimeMs"])
         ),
         "Total Cost": lambda sch, s, x: 0,
     }
@@ -1290,11 +1367,11 @@ def plot_sct(data_files_json: list[str], output_type: str):
             if "-" in scheme:
                 scheme, _ = scheme.split("-")
 
-            if scheme == "hintlesspir" and (
-                metric == "Computation" or metric == "Computation Cost"
-            ):
-                row += "& " + padw("$*$")
-                continue
+            # if scheme == "hintlesspir" and (
+            #     metric == "Computation" or metric == "Computation Cost"
+            # ):
+            #     row += "& " + padw("$*$")
+            #     continue
 
             if metric == "Offline Download" and scheme != "doublepir":
                 row += "& " + padw(DASH)
@@ -1371,6 +1448,12 @@ def parse_args():
         "--star-variants",
         action="store_true",
         help="Use simplepir* and doublepir* variants instead of simplepir and doublepir",
+    )
+    # flag for respire db sizes (smaller)
+    parser.add_argument(
+        "--respire",
+        action="store_true",
+        help="Use respire database sizes",
     )
     # add flag for ypir only
     parser.add_argument(

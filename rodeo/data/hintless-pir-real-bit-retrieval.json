@@ -30,6 +30,50 @@
     {
       "scenario": {
         "db": {
+          "numItems": 17179869184,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 630784,
+          "downloadBytes": 1789952,
+          "firstPassTimeMs": 142,
+          "ringPackingTimeMs": 1108,
+          "serverTimeMs": 1668
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 34359738368,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 892928,
+          "downloadBytes": 1789952,
+          "firstPassTimeMs": 287,
+          "ringPackingTimeMs": 1109,
+          "serverTimeMs": 2217
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
           "numItems": 68719476736,
           "itemSizeBits": 1
         }
@@ -46,6 +90,28 @@
           "firstPassTimeMs": 708,
           "ringPackingTimeMs": 1129,
           "serverTimeMs": 3506
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 137438953472,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 1417216,
+          "downloadBytes": 3395584,
+          "firstPassTimeMs": 1662,
+          "ringPackingTimeMs": 1940,
+          "serverTimeMs": 7271
         }
       }
     },
