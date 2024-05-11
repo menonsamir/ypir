@@ -1,0 +1,23 @@
+{
+  "name": "workload",
+  "workloads": [
+    {
+      "db": {
+        "numItems": 4294967296,
+        "itemSizeBits": 1
+      }
+    },
+    {
+      "db": {
+        "numItems": 2147483648,
+        "itemSizeBits": 1
+      }
+    },
+    {
+      "db": {
+        "numItems": 1073741824,
+        "itemSizeBits": 1
+      }
+    }
+  ]
+}

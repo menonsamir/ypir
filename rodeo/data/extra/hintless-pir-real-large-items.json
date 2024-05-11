@@ -1,0 +1,75 @@
+{
+  "scheme": {
+    "family": "hintlesspir",
+    "variant": "hintlesspir",
+    "comment": "HintlessPIR with true serverTimeMs and ringPackingTimeMs; all firstPassTimeMs are instead taken from the reference implementation of SimplePIR (which is significantly faster)."
+  },
+  "results": [
+    {
+      "scenario": {
+        "db": {
+          "numItems": 32768,
+          "itemSizeBits": 262144
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 212723
+        },
+        "online": {
+          "uploadBytes": 499712,
+          "downloadBytes": 1789952,
+          "firstPassTimeMs": 74,
+          "ringPackingTimeMs": 1125,
+          "serverTimeMs": 1425
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 131072,
+          "itemSizeBits": 524288
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 1585683
+        },
+        "online": {
+          "uploadBytes": 1417216,
+          "downloadBytes": 1789952,
+          "firstPassTimeMs": 708,
+          "ringPackingTimeMs": 1129,
+          "serverTimeMs": 3506
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 262144,
+          "itemSizeBits": 1048576
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 5732511
+        },
+        "online": {
+          "uploadBytes": 2465792,
+          "downloadBytes": 3395584,
+          "firstPassTimeMs": 3079,
+          "ringPackingTimeMs": 2254,
+          "serverTimeMs": 12785
+        }
+      }
+    }
+  ]
+}

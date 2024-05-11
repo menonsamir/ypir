@@ -1,0 +1,9 @@
+{
+  "rust-analyzer.runnables.extraArgs": [
+    "--profile",
+    "release-with-debug"
+  ],
+  "rust-analyzer.runnables.extraEnv": {
+    "RUST_LOG": "debug"
+  }
+}

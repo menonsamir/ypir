@@ -1,0 +1,23 @@
+{
+  "name": "workload-respire",
+  "workloads": [
+    {
+      "db": {
+        "numItems": 16384,
+        "itemSizeBits": 131072
+      }
+    },
+    {
+      "db": {
+        "numItems": 32768,
+        "itemSizeBits": 262144
+      }
+    },
+    {
+      "db": {
+        "numItems": 131072,
+        "itemSizeBits": 524288
+      }
+    }
+  ]
+}

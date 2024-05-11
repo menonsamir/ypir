@@ -1,0 +1,141 @@
+{
+  "scheme": {
+    "family": "hintlesspir",
+    "variant": "hintlesspir",
+    "comment": "HintlessPIR with true serverTimeMs and ringPackingTimeMs; all firstPassTimeMs are instead taken from the reference implementation of SimplePIR (which is significantly faster)."
+  },
+  "results": [
+    {
+      "scenario": {
+        "db": {
+          "numItems": 8589934592,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 212723
+        },
+        "online": {
+          "uploadBytes": 499712,
+          "downloadBytes": 1789952,
+          "firstPassTimeMs": 74,
+          "ringPackingTimeMs": 1125,
+          "serverTimeMs": 1425
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 17179869184,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 630784,
+          "downloadBytes": 1789952,
+          "firstPassTimeMs": 142,
+          "ringPackingTimeMs": 1108,
+          "serverTimeMs": 1668
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 34359738368,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 892928,
+          "downloadBytes": 1789952,
+          "firstPassTimeMs": 287,
+          "ringPackingTimeMs": 1109,
+          "serverTimeMs": 2217
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 68719476736,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 1585683
+        },
+        "online": {
+          "uploadBytes": 1417216,
+          "downloadBytes": 1789952,
+          "firstPassTimeMs": 708,
+          "ringPackingTimeMs": 1129,
+          "serverTimeMs": 3506
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 137438953472,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 0
+        },
+        "online": {
+          "uploadBytes": 1417216,
+          "downloadBytes": 3395584,
+          "firstPassTimeMs": 1662,
+          "ringPackingTimeMs": 1940,
+          "serverTimeMs": 7271
+        }
+      }
+    },
+    {
+      "scenario": {
+        "db": {
+          "numItems": 274877906944,
+          "itemSizeBits": 1
+        }
+      },
+      "measurement": {
+        "offline": {
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "serverTimeMs": 5732511
+        },
+        "online": {
+          "uploadBytes": 2465792,
+          "downloadBytes": 3395584,
+          "firstPassTimeMs": 3079,
+          "ringPackingTimeMs": 2254,
+          "serverTimeMs": 12785
+        }
+      }
+    }
+  ]
+}

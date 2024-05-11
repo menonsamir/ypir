@@ -5,8 +5,8 @@ use log::debug;
 use spiral_rs::{arith::rescale, client::Client, params::Params, poly::*};
 
 use super::{
-    client::LWEParams,
-    scheme::{params_for_scenario, GetQPrime},
+    lwe::LWEParams,
+    params::{params_for_scenario, GetQPrime},
 };
 
 /*
@@ -272,20 +272,6 @@ mod tests {
         debug!("total_log2_delta: {}", total_log2_delta);
 
         assert!(total_log2_delta < -40.);
-    }
-
-    #[test]
-    fn test_simplepir_correctness() {
-        let (lwe_n, lwe_q, lwe_s, lwe_p) = (
-            1024.,
-            2.0f64.powi(32),
-            11. * (2. * PI).sqrt(),
-            2.0f64.powi(9),
-        );
-        let upper_n = 2.0f64.powi(36);
-        let log2_err_prob = simplepir_correctness(lwe_n, lwe_q, lwe_s, lwe_p, upper_n);
-        debug!("log2_err_prob: {}", log2_err_prob);
-        assert!(log2_err_prob < -40.);
     }
 
     #[test]

@@ -27,6 +27,8 @@ pub struct Offline {
 pub struct Online {
     pub upload_bytes: usize,
     pub download_bytes: usize,
+    pub simplepir_query_bytes: usize,
+    pub doublepir_query_bytes: usize,
     pub simplepir_resp_bytes: usize,
     pub doublepir_resp_bytes: usize,
     pub server_time_ms: usize,
@@ -47,4 +49,14 @@ pub fn get_vec_pm_size_bytes(v_p: &[PolyMatrixNTT]) -> usize {
         * v_p[0].params.poly_len
         * v_p[0].params.modulus_log2 as usize
         / 8
+}
+
+pub fn get_size_bytes(response: &[Vec<Vec<u8>>]) -> usize {
+    let mut size_bytes = 0;
+    for i in 0..response.len() {
+        for j in 0..response[i].len() {
+            size_bytes += response[i][j].len();
+        }
+    }
+    size_bytes
 }
