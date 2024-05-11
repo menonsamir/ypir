@@ -181,7 +181,7 @@ impl DbRowsPadded for Params {
 impl<'a, T> YServer<'a, T>
 where
     T: Sized + Copy + ToU64 + Default,
-    *const T: ToM512,
+    *const T: ToM256 + ToM512,
 {
     pub fn new<'b, I>(
         params: &'a Params,
@@ -295,7 +295,7 @@ where
 
         let now = Instant::now();
         let mut result = AlignedMemory64::new(K * db_cols);
-        fast_batched_dot_product_avx512::<K, _>(
+        fast_batched_dot_product::<K, _>(
             self.params,
             result.as_mut_slice(),
             aligned_query_packed,
@@ -322,7 +322,7 @@ where
         let mut result = vec![0u32; (db_cols + 8) * K];
         let now = Instant::now();
         // let mut result = AlignedMemory64::new(K * db_cols + 8);
-        // lwe_fast_batched_dot_product_avx512::<K, _>(
+        // lwe_fast_batched_dot_product::<K, _>(
         //     self.params,
         //     result.as_mut_slice(),
         //     aligned_query_packed,
@@ -809,7 +809,7 @@ where
         let first_pass = Instant::now();
         debug!("Performing mul...");
         let mut intermediate = AlignedMemory64::new(db_cols);
-        fast_batched_dot_product_avx512::<1, T>(
+        fast_batched_dot_product::<1, T>(
             &params,
             intermediate.as_mut_slice(),
             first_dim_queries_packed,
@@ -1187,6 +1187,35 @@ mod m512_impl {
         #[inline(always)]
         fn to_m512(self) -> __m512i {
             unsafe { _mm512_cvtepu32_epi64(_mm256_load_si256(self as *const _)) }
+        }
+    }
+}
+
+pub trait ToM256 {
+    fn to_m256(self) -> __m256i;
+}
+
+mod m256_impl {
+    use super::*;
+
+    impl ToM256 for *const u8 {
+        #[inline(always)]
+        fn to_m256(self) -> __m256i {
+            unsafe { _mm256_cvtepu8_epi64(_mm_loadl_epi64(self as *const _)) }
+        }
+    }
+
+    impl ToM256 for *const u16 {
+        #[inline(always)]
+        fn to_m256(self) -> __m256i {
+            unsafe { _mm256_cvtepu16_epi64(_mm_loadl_epi64(self as *const _)) }
+        }
+    }
+
+    impl ToM256 for *const u32 {
+        #[inline(always)]
+        fn to_m256(self) -> __m256i {
+            unsafe { _mm256_cvtepu32_epi64(_mm_load_si128(self as *const _)) }
         }
     }
 }

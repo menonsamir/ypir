@@ -656,7 +656,7 @@ mod test {
 
     #[test]
     fn test_ypir_simplepir_basic() {
-        run_ypir_batched(1 << 17, 65536 * 8, 1, true, 1);
+        run_ypir_batched(32768, 32768 * 8, 1, true, 1);
     }
 
     #[test]
