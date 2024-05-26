@@ -21,9 +21,9 @@
         "online": {
           "uploadBytes": 499712,
           "downloadBytes": 1789952,
-          "firstPassTimeMs": 0,
-          "ringPackingTimeMs": 0,
-          "serverTimeMs": 743
+          "firstPassTimeMs": 74,
+          "ringPackingTimeMs": 1125,
+          "serverTimeMs": 1425
         }
       }
     },
@@ -43,9 +43,9 @@
         "online": {
           "uploadBytes": 1417216,
           "downloadBytes": 1789952,
-          "firstPassTimeMs": 0,
-          "ringPackingTimeMs": 0,
-          "serverTimeMs": 1620
+          "firstPassTimeMs": 708,
+          "ringPackingTimeMs": 1129,
+          "serverTimeMs": 3506
         }
       }
     },
@@ -65,9 +65,9 @@
         "online": {
           "uploadBytes": 2465792,
           "downloadBytes": 3395584,
-          "firstPassTimeMs": 0,
-          "ringPackingTimeMs": 0,
-          "serverTimeMs": 4997
+          "firstPassTimeMs": 3079,
+          "ringPackingTimeMs": 2254,
+          "serverTimeMs": 12785
         }
       }
     }

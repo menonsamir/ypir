@@ -7,7 +7,6 @@ from calendar import c
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import tikzplotlib
 
 scheme_styles = {
@@ -164,7 +163,6 @@ def plot_1_bit_retrieval(data_files_json: list[str], output_type: str):
         "doublepir*",
         "tiptoe",
         "hintlesspir",
-        "hintlesspir*",
         "ypir",
     ]
 
@@ -242,7 +240,7 @@ Model table:
 """
 
 
-DASH = "--"
+DASH = "---"
 
 
 def format_bytes(n: int):
@@ -445,8 +443,8 @@ def table_1_bit_retrieval(args, data_files_json: list[str], output_type: str):
     disp_width = 30
     padw = lambda s: pad(s, disp_width)
     scheme_results, all_scenarios = gather_1_bit_retrieval_data(data_files_json)
-    schemes = ["simplepir", "doublepir", "hintlesspir", "tiptoe", "ypir"]
-    nice_schemes = ["SimplePIR", "DoublePIR", "HintlessPIR", "Tiptoe", "YPIR"]
+    schemes = ["simplepir", "doublepir", "tiptoe", "hintlesspir", "ypir"]
+    nice_schemes = ["SimplePIR", "DoublePIR", "Tiptoe", "HintlessPIR", "YPIR"]
     if args.star_variants:
         schemes = [
             "simplepir",
@@ -454,7 +452,6 @@ def table_1_bit_retrieval(args, data_files_json: list[str], output_type: str):
             "doublepir",
             "doublepir*",
             "hintlesspir",
-            "hintlesspir*",
             "ypir",
         ]
         nice_schemes = [
@@ -462,8 +459,7 @@ def table_1_bit_retrieval(args, data_files_json: list[str], output_type: str):
             "SimplePIR*",
             "DoublePIR",
             "DoublePIR*",
-            "HintlessPIR",
-            "HintlessPIR+",
+            "\\hintlesspir",
             "YPIR",
         ]
         # schemes = ["simplepir*", "doublepir*", "ypir"]
@@ -496,6 +492,23 @@ def table_1_bit_retrieval(args, data_files_json: list[str], output_type: str):
         "Server Time",
         "Throughput",
     ]
+    if args.star_variants:
+        metrics = {
+        "Prep. Speed": prep_tput,
+        "Off. Comm.": off_download,
+        "Upload": upload,
+        "Download": download,
+        "Server Time": server_time,
+        "Throughput": throughput,
+        }
+        metric_keys = [
+            "Prep. Speed",
+            "Off. Comm.",
+            "Upload",
+            "Download",
+            "Server Time",
+            "Throughput",
+        ]
     output = (
         padw("\\textbf{Database}")
         + "& "
@@ -560,17 +573,17 @@ def plot_large_items(args, data_files_json: list[str], output_type: str):
     # assert output_type == "tex"
 
     schemes = ["simplepir", "hintlesspir", "ypir-sp"]
-    nice_schemes = ["SimplePIR", "HintlessPIR", "YPIR+SimplePIR"]
+    nice_schemes = ["SimplePIR", "HintlessPIR", "\\YPIRSP"]
     if args.star_variants:
         schemes = ["simplepir", "hintlesspir", "hintlesspir*", "ypir-sp"]
-        nice_schemes = ["SimplePIR", "HintlessPIR", "HintlessPIR+", "YPIR+SimplePIR"]
+        nice_schemes = ["SimplePIR", "HintlessPIR", "HintlessPIR+", "\\YPIRSP"]
 
     if args.respire:
         schemes = ["ypir-sp"]
         nice_schemes = ["YPIR+SimplePIR"]
 
     # generate table
-    disp_width = 40
+    disp_width = 45
     padw = lambda s: pad(s, disp_width)
     output = (
         padw("\\textbf{Database}")
@@ -582,9 +595,9 @@ def plot_large_items(args, data_files_json: list[str], output_type: str):
     )
 
     db_keys = [
-        "$2^{15} \\times 32\ \\text{KB}$",
-        "$2^{18} \\times 32\ \\text{KB}$",
-        "$2^{19} \\times 64\ \\text{KB}$",
+        "$\\boldsymbol{2^{15} \\times 32}$ {\\bf KB}",
+        "$\\boldsymbol{2^{18} \\times 32}$ {\\bf KB}",
+        "$\\boldsymbol{2^{19} \\times 64}$ {\\bf KB}",
     ]
 
     db_scenarios = {
@@ -594,9 +607,9 @@ def plot_large_items(args, data_files_json: list[str], output_type: str):
     }
 
     db_caption = {
-        db_keys[0]: "(1 GB)",
-        db_keys[1]: "(8 GB)",
-        db_keys[2]: "(32 GB)",
+        db_keys[0]: "{\\bf (1 GB)}",
+        db_keys[1]: "{\\bf (8 GB)}",
+        db_keys[2]: "{\\bf (32 GB)}",
     }
 
     alt_scenarios = {
@@ -719,7 +732,7 @@ def plot_comm_comp_tradeoff(args, data_files_json: list[str], output_type: str):
     # first get all the data
     scheme_results, all_scenarios = gather_1_bit_retrieval_data(data_files_json)
 
-    schemes = ["simplepir*", "doublepir*", "hintlesspir", "hintlesspir*", "ypir"]
+    schemes = ["simplepir*", "doublepir*", "hintlesspir", "ypir"]
 
     # we have 1, 2, 4, 8, 16, and 32 GB
     # we'll consider 32 x 1 GB, 16 x 2 GB, etc
@@ -1440,7 +1453,7 @@ def parse_args():
     parser.add_argument(
         "--output-type",
         choices=["pdf", "tex"],
-        default="pdf",
+        default="tex",
         help="Output type for plot",
     )
     # add flag for simplepir* and doublepir* variants

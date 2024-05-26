@@ -138,3 +138,22 @@ for 32768x32768:
 ```
 LinPIR preprocessing: 16096ms
 ```
+
+## Packing
+
+```
+
+((2 * 2) * (4096) * 90)/8
+=> 184320 bytes
+=> 180 KB
+
+32768 x 32768
+
+1125 ms to pack 32768 LWE encodings
+=> 141 ms to pack 4096 encodings
+
+preprocessing:
+16096 ms for 32768 LWE encodings
+=> 2012 ms to prep 4096 encodings
+```
+
