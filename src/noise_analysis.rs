@@ -244,7 +244,7 @@ mod tests {
 
     use super::super::{
         client::{decrypt_ct_reg_measured, YClient},
-        scheme::*,
+        constants::*,
     };
     use super::*;
 

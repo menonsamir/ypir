@@ -2,16 +2,23 @@
 
 pub mod bits;
 pub mod client;
+pub mod constants;
 pub mod convolution;
-pub mod kernel;
 pub mod lwe;
-pub mod matmul;
 pub mod measurement;
 pub mod modulus_switch;
 pub mod noise_analysis;
-pub mod packing;
 pub mod params;
-pub mod scheme;
-pub mod server;
 pub mod transpose;
 pub mod util;
+
+#[cfg(feature = "server")]
+pub mod kernel;
+#[cfg(feature = "server")]
+pub mod matmul;
+#[cfg(feature = "server")]
+pub mod packing;
+#[cfg(feature = "server")]
+pub mod scheme;
+#[cfg(feature = "server")]
+pub mod server;

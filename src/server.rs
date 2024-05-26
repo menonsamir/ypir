@@ -9,7 +9,6 @@ use rand_chacha::ChaCha20Rng;
 use spiral_rs::aligned_memory::AlignedMemory64;
 use spiral_rs::{arith::*, client::*, params::*, poly::*};
 
-use crate::convolution::naive_multiply_matrices;
 use crate::measurement::Measurement;
 
 use super::{
@@ -22,7 +21,7 @@ use super::{
     modulus_switch::ModulusSwitch,
     packing::*,
     params::*,
-    scheme::*,
+    constants::*,
     transpose::*,
     util::*,
 };
@@ -1243,4 +1242,44 @@ impl ToU64 for u64 {
     fn to_u64(self) -> u64 {
         self
     }
+}
+
+pub fn naive_multiply_matrices<T: ToU64 + Copy>(
+    a: &[u32],
+    a_rows: usize,
+    a_cols: usize,
+    b_t: &[T], // transposed
+    b_rows: usize,
+    b_cols: usize,
+    is_b_transposd: bool,
+) -> Vec<u32> {
+    // performs wrapping arithmetic
+
+    assert_eq!(a_cols, b_rows);
+
+    // debug!("Multiplying {}x{} by {}x{}", a_rows, a_cols, b_rows, b_cols);
+
+    let mut result = vec![0u32; a_rows * b_cols];
+    for i in 0..a_rows {
+        for j in 0..b_cols {
+            for k in 0..a_cols {
+                let a_idx = i * a_cols + k;
+                let b_idx = if is_b_transposd {
+                    j * b_rows + k // on purpose, since transposed
+                } else {
+                    k * b_cols + j
+                };
+                let res_idx = i * b_cols + j;
+
+                unsafe {
+                    let a_val = *a.get_unchecked(a_idx);
+                    let b_val = (b_t.get_unchecked(b_idx)).to_u64() as u32;
+
+                    result[res_idx] = result[res_idx].wrapping_add(a_val.wrapping_mul(b_val));
+                }
+            }
+        }
+    }
+
+    result
 }

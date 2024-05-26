@@ -1,3 +1,4 @@
+#[cfg(feature = "server")]
 use ypir::scheme::run_ypir_batched;
 
 use clap::Parser;
@@ -29,6 +30,7 @@ struct Args {
     verbose: bool,
 }
 
+#[cfg(feature = "server")]
 fn main() {
     let args = Args::parse();
     let Args {
@@ -86,4 +88,9 @@ fn main() {
         serde_json::to_writer_pretty(&mut file, &measurement).unwrap();
         println!("Report written.");
     }
+}
+
+#[cfg(not(feature = "server"))]
+fn main() {
+    panic!("This binary is only available with the 'server' feature enabled.");
 }

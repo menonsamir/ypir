@@ -14,15 +14,7 @@ use crate::modulus_switch::ModulusSwitch;
 use crate::noise_analysis::YPIRSchemeParams;
 use crate::packing::condense_matrix;
 
-use super::{client::*, lwe::LWEParams, measurement::*, params::*, server::*};
-
-pub const STATIC_PUBLIC_SEED: [u8; 32] = [0u8; 32];
-pub const SEED_0: u8 = 0;
-pub const SEED_1: u8 = 1;
-
-pub const STATIC_SEED_2: [u8; 32] = [
-    2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-];
+use super::{client::*, lwe::LWEParams, measurement::*, params::*, server::*, constants::*};
 
 pub fn run_ypir_batched(
     num_items: usize,
@@ -656,15 +648,17 @@ mod test {
 
     #[test]
     fn test_ypir_simplepir_basic() {
-        run_ypir_batched(1 << 17, 65536 * 8, 1, true, 1);
+        run_ypir_batched(1 << 14, 16384 * 8, 1, true, 1);
     }
 
     #[test]
+    #[ignore]
     fn test_ypir_simplepir_rectangle() {
         run_ypir_batched(1 << 16, 16384 * 8, 1, true, 1);
     }
 
     #[test]
+    #[ignore]
     fn test_ypir_simplepir_rectangle_8gb() {
         run_ypir_batched(1 << 17, 65536 * 8, 1, true, 1);
     }

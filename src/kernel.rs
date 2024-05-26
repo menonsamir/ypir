@@ -1,6 +1,8 @@
 use std::arch::x86_64::*;
 
-use spiral_rs::{arith::*, params::*};
+use spiral_rs::{arith::*, params::*, poly::*};
+
+use crate::server::ToU64;
 
 use super::server::ToM512;
 
@@ -130,6 +132,63 @@ pub fn fast_batched_dot_product_avx512<const K: usize, T: Copy>(
     }
 }
 
+pub fn scalar_multiply_avx(res: &mut PolyMatrixNTT, a: &PolyMatrixNTT, b: &PolyMatrixNTT) {
+    assert_eq!(a.rows, 1);
+    assert_eq!(a.cols, 1);
+
+    let params = res.params;
+    let pol2 = a.get_poly(0, 0);
+    for i in 0..b.rows {
+        for j in 0..b.cols {
+            let res_poly = res.get_poly_mut(i, j);
+            let pol1 = b.get_poly(i, j);
+            crate::packing::multiply_poly_avx(params, res_poly, pol1, pol2);
+        }
+    }
+}
+
+pub fn multiply_matrices_raw_not_transposed<T>(
+    params: &Params,
+    a: &[u64],
+    a_rows: usize,
+    a_cols: usize,
+    b: &[T], // NOT transposed
+    b_rows: usize,
+    b_cols: usize,
+) -> Vec<u64>
+where
+    T: ToU64 + Copy,
+{
+    assert_eq!(a_cols, b_rows);
+
+    let mut result = vec![0u128; a_rows * b_cols];
+
+    for i in 0..a_rows {
+        for k in 0..a_cols {
+            for j in 0..b_cols {
+                let a_idx = i * a_cols + k;
+                let b_idx = k * b_cols + j;
+                let res_idx = i * b_cols + j;
+
+                unsafe {
+                    let a_val = *a.get_unchecked(a_idx);
+                    let b_val = (*b.get_unchecked(b_idx)).to_u64();
+
+                    let prod = a_val as u128 * b_val as u128;
+                    result[res_idx] += prod;
+                }
+            }
+        }
+    }
+
+    let mut result_u64 = vec![0u64; a_rows * b_cols];
+    for i in 0..result.len() {
+        result_u64[i] = barrett_reduction_u128(params, result[i]);
+    }
+
+    result_u64
+}
+
 #[cfg(test)]
 mod test {
     use std::time::Instant;
@@ -140,6 +199,7 @@ mod test {
 
     use super::super::util::test_params;
     use super::*;
+    use crate::{transpose::*, util::*};
     use test_log::test;
 
     #[test]
@@ -185,5 +245,83 @@ mod test {
         );
         debug!("");
         debug!("{}", sum);
+    }
+
+    #[test]
+    fn test_negacyclic_mul_db_col() {
+        let params = test_params();
+        let pol_a = PolyMatrixRaw::random(&params, 1, 1);
+        let pol_b: PolyMatrixRaw<'_> = PolyMatrixRaw::random(&params, 1, 1);
+        let a = pol_a.get_poly(0, 0);
+        let b = pol_b.get_poly(0, 0);
+        let negacylic_a = negacyclic_matrix(&a, params.modulus);
+        let negacyclic_a_t = transpose_generic(&negacylic_a, params.poly_len, params.poly_len);
+
+        // the twist is that b is a 'column of the db'
+        // we want to compute (b as a row vector) * (transpose(negacylic_a)))
+
+        assert_eq!(negacylic_a[0], a[0]);
+        assert_eq!(
+            negacylic_a[params.poly_len],
+            (params.modulus - a[params.poly_len - 1]) % params.modulus
+        );
+        let prod = multiply_matrices_raw_not_transposed(
+            &params,
+            b,
+            1,
+            params.poly_len,
+            &negacyclic_a_t,
+            params.poly_len,
+            params.poly_len,
+        );
+
+        // we think this is equivalent to:
+        // poly_b * poly([a_0 -a_d-1 -a_d-2 ... -a_1])
+        // = poly_b * poly(negacyclic_perm(a, 0))
+
+        let transformed_a = negacyclic_perm(a, 0, params.modulus);
+        let mut pol_a_transformed = PolyMatrixRaw::zero(&params, 1, 1);
+        pol_a_transformed
+            .data
+            .as_mut_slice()
+            .copy_from_slice(&transformed_a);
+        let pol_c = (&pol_a_transformed.ntt() * &pol_b.ntt()).raw();
+        let c = pol_c.get_poly(0, 0);
+
+        for i in 0..params.poly_len {
+            assert_eq!(prod[i] % params.modulus, c[i] % params.modulus, "i = {}", i);
+        }
+    }
+
+    #[test]
+    fn test_negacyclic_mul() {
+        let params = test_params();
+        let pol_a = PolyMatrixRaw::random(&params, 1, 1);
+        let pol_b = PolyMatrixRaw::random(&params, 1, 1);
+        let a = pol_a.get_poly(0, 0);
+        let b = pol_b.get_poly(0, 0);
+        let negacylic_a = negacyclic_matrix(&a, params.modulus);
+        // let negacylic_a_t = transpose_generic(&negacylic_a, params.poly_len, params.poly_len);
+        assert_eq!(negacylic_a[0], a[0]);
+        assert_eq!(
+            negacylic_a[params.poly_len],
+            (params.modulus - a[params.poly_len - 1]) % params.modulus
+        );
+        let prod = multiply_matrices_raw_not_transposed(
+            &params,
+            b,
+            1,
+            params.poly_len,
+            &negacylic_a,
+            params.poly_len,
+            params.poly_len,
+        );
+
+        let pol_c = (&pol_a.ntt() * &pol_b.ntt()).raw();
+        let c = pol_c.get_poly(0, 0);
+
+        for i in 0..params.poly_len {
+            assert_eq!(prod[i] % params.modulus, c[i] % params.modulus, "i = {}", i);
+        }
     }
 }

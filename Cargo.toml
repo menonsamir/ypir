@@ -6,6 +6,10 @@ edition = "2021"
 [build-dependencies]
 cc = "1.0"
 
+[features]
+default = ["server"]
+server = []
+
 [dependencies]
 spiral-rs = { git = "https://github.com/menonsamir/spiral-rs.git", rev = "6929441" }
 rand = { version = "0.8.5", features = ["small_rng"] }

@@ -8,7 +8,7 @@ use spiral_rs::{
 };
 
 use super::convolution::negacyclic_matrix_u32;
-use super::{lwe::*, noise_analysis::measure_noise_width_squared, scheme::*, util::*};
+use super::{constants::*, lwe::*, noise_analysis::measure_noise_width_squared, util::*};
 
 pub fn rlwe_to_lwe<'a>(params: &'a Params, ct: &PolyMatrixRaw<'a>) -> Vec<u64> {
     let a = ct.get_poly(0, 0);

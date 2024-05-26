@@ -6,7 +6,7 @@ use spiral_rs::{arith::*, gadget::*, ntt::*, params::*, poly::*};
 
 use crate::server::Precomp;
 
-use super::util::*;
+use super::{kernel::*, util::*};
 
 fn homomorphic_automorph<'a>(
     params: &'a Params,

@@ -1,3 +1,4 @@
+#[cfg(feature = "server")]
 fn main() {
     println!("cargo:rerun-if-changed=src/matmul.cpp");
     cc::Build::new()
@@ -8,3 +9,6 @@ fn main() {
         .flag("-std=c++11")
         .compile("matmul");
 }
+
+#[cfg(not(feature = "server"))]
+fn main() {}

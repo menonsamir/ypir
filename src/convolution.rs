@@ -7,8 +7,6 @@
 
 use spiral_rs::{arith::barrett_coeff_u64, params::Params, poly::*};
 
-use crate::server::ToU64;
-
 static DEFAULT_MODULI: [u64; 2] = [268369921u64, 249561089u64];
 
 pub struct Convolution {
@@ -119,7 +117,7 @@ pub fn naive_negacyclic_convolve(a: &[u32], b: &[u32]) -> Vec<u32> {
             if i < j {
                 b_val = b_val.wrapping_neg();
             }
-            res[i] += a[j] * b_val;
+            res[i] = res[i].wrapping_add(a[j].wrapping_mul(b_val));
         }
     }
     res
@@ -150,46 +148,6 @@ pub fn negacyclic_perm_u32(a: &[u32]) -> Vec<u32> {
     res
 }
 
-pub fn naive_multiply_matrices<T: ToU64 + Copy>(
-    a: &[u32],
-    a_rows: usize,
-    a_cols: usize,
-    b_t: &[T], // transposed
-    b_rows: usize,
-    b_cols: usize,
-    is_b_transposd: bool,
-) -> Vec<u32> {
-    // performs wrapping arithmetic
-
-    assert_eq!(a_cols, b_rows);
-
-    // debug!("Multiplying {}x{} by {}x{}", a_rows, a_cols, b_rows, b_cols);
-
-    let mut result = vec![0u32; a_rows * b_cols];
-    for i in 0..a_rows {
-        for j in 0..b_cols {
-            for k in 0..a_cols {
-                let a_idx = i * a_cols + k;
-                let b_idx = if is_b_transposd {
-                    j * b_rows + k // on purpose, since transposed
-                } else {
-                    k * b_cols + j
-                };
-                let res_idx = i * b_cols + j;
-
-                unsafe {
-                    let a_val = *a.get_unchecked(a_idx);
-                    let b_val = (b_t.get_unchecked(b_idx)).to_u64() as u32;
-
-                    result[res_idx] = result[res_idx].wrapping_add(a_val.wrapping_mul(b_val));
-                }
-            }
-        }
-    }
-
-    result
-}
-
 #[cfg(test)]
 mod test {
     use std::time::Instant;
@@ -197,6 +155,46 @@ mod test {
     use log::debug;
 
     use super::*;
+
+    fn naive_multiply_matrices(
+        a: &[u32],
+        a_rows: usize,
+        a_cols: usize,
+        b_t: &[u32], // transposed
+        b_rows: usize,
+        b_cols: usize,
+        is_b_transposd: bool,
+    ) -> Vec<u32> {
+        // performs wrapping arithmetic
+
+        assert_eq!(a_cols, b_rows);
+
+        // debug!("Multiplying {}x{} by {}x{}", a_rows, a_cols, b_rows, b_cols);
+
+        let mut result = vec![0u32; a_rows * b_cols];
+        for i in 0..a_rows {
+            for j in 0..b_cols {
+                for k in 0..a_cols {
+                    let a_idx = i * a_cols + k;
+                    let b_idx = if is_b_transposd {
+                        j * b_rows + k // on purpose, since transposed
+                    } else {
+                        k * b_cols + j
+                    };
+                    let res_idx = i * b_cols + j;
+
+                    unsafe {
+                        let a_val = *a.get_unchecked(a_idx);
+                        let b_val = *b_t.get_unchecked(b_idx);
+
+                        result[res_idx] = result[res_idx].wrapping_add(a_val.wrapping_mul(b_val));
+                    }
+                }
+            }
+        }
+
+        result
+    }
 
     #[test]
     fn test_ntt_raw() {
