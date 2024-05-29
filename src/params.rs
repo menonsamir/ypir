@@ -96,7 +96,7 @@ fn internal_params_for(
     ))
 }
 
-pub fn params_for_scenario(num_items: usize, item_size_bits: usize) -> Params {
+pub fn params_for_scenario(num_items: u64, item_size_bits: u64) -> Params {
     let total_db_bytes = num_items * item_size_bits / 8;
     let lwe_pt_word_bytes = 1;
     let num_items = total_db_bytes / lwe_pt_word_bytes;
@@ -119,7 +119,7 @@ pub fn params_for_scenario(num_items: usize, item_size_bits: usize) -> Params {
     internal_params_for(nu_1, nu_2, p, q2_bits, t_exp_left, DEF_MOD_STR)
 }
 
-pub fn params_for_scenario_simplepir(num_items: usize, item_size_bits: usize) -> Params {
+pub fn params_for_scenario_simplepir(num_items: u64, item_size_bits: u64) -> Params {
     let db_rows = num_items;
     let db_cols = (item_size_bits as f64 / (2048.0 * 14.0)).ceil() as usize;
 

@@ -14,7 +14,7 @@ use crate::modulus_switch::ModulusSwitch;
 use crate::noise_analysis::YPIRSchemeParams;
 use crate::packing::condense_matrix;
 
-use super::{client::*, lwe::LWEParams, measurement::*, params::*, server::*, constants::*};
+use super::{client::*, constants::*, lwe::LWEParams, measurement::*, params::*, server::*};
 
 pub fn run_ypir_batched(
     num_items: usize,
@@ -24,9 +24,9 @@ pub fn run_ypir_batched(
     trials: usize,
 ) -> Measurement {
     let params = if is_simplepir {
-        params_for_scenario_simplepir(num_items, item_size_bits)
+        params_for_scenario_simplepir(num_items as u64, item_size_bits as u64)
     } else {
-        params_for_scenario(num_items, item_size_bits)
+        params_for_scenario(num_items as u64, item_size_bits as u64)
     };
     let measurement = match num_clients {
         1 => run_ypir_on_params::<1>(params, is_simplepir, trials),
@@ -161,14 +161,19 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
             let query_row_last_row: &[u64] = &query_row[params.poly_len * db_rows..];
             assert_eq!(query_row_last_row.len(), db_rows);
             let packed_query_row = pack_query(&params, query_row_last_row);
+            // let y_client = YClient::new(client, &params);
+            // let (packed_query_row, pack_pub_params_row_1s) =
+            //     y_client.generate_full_query(target_idx);
 
             let query_size = ((packed_query_row.len() as f64 * params.modulus_log2 as f64) / 8.0)
                 .ceil() as usize;
+            let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params_row_1s);
+            let total_query_size = query_size + pub_params_size;
 
             measurement.online.client_query_gen_time_ms = start.elapsed().as_millis() as usize;
             debug!("Generated query in {} us", start.elapsed().as_micros());
 
-            online_upload_bytes = query_size + pub_params_size;
+            online_upload_bytes = total_query_size;
             debug!("Query size: {} bytes", online_upload_bytes);
 
             queries.push((

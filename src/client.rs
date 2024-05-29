@@ -7,6 +7,9 @@ use spiral_rs::{
     arith::*, client::*, discrete_gaussian::*, gadget::*, number_theory::*, params::*, poly::*,
 };
 
+use crate::measurement::get_vec_pm_size_bytes;
+use crate::packing::condense_matrix;
+
 use super::convolution::negacyclic_matrix_u32;
 use super::{constants::*, lwe::*, noise_analysis::measure_noise_width_squared, util::*};
 
@@ -334,6 +337,44 @@ impl<'a> YClient<'a> {
             let lwes = self.rlwes_to_lwes(&out);
             lwes
         }
+    }
+
+    pub fn generate_full_query(
+        &self,
+        target_idx: usize,
+    ) -> (AlignedMemory64, Vec<PolyMatrixNTT<'a>>) {
+        // setup
+        let db_rows = 1 << (self.params.db_dim_1 + self.params.poly_len_log2);
+        let db_cols = self.params.instances * self.params.poly_len;
+        let target_row = target_idx / db_cols;
+
+        // generate pub params
+        let sk_reg = self.client().get_sk_reg();
+        let pack_pub_params = raw_generate_expansion_params(
+            self.params,
+            &sk_reg,
+            self.params.poly_len_log2,
+            self.params.t_exp_left,
+            &mut ChaCha20Rng::from_entropy(),
+            &mut ChaCha20Rng::from_seed(STATIC_SEED_2),
+        );
+        // let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params) / 2;
+        let mut pack_pub_params_row_1s = pack_pub_params.to_vec();
+        for i in 0..pack_pub_params.len() {
+            pack_pub_params_row_1s[i] =
+                pack_pub_params[i].submatrix(1, 0, 1, pack_pub_params[i].cols);
+            pack_pub_params_row_1s[i] = condense_matrix(self.params, &pack_pub_params_row_1s[i]);
+        }
+        let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params_row_1s);
+        debug!("pub params size: {} bytes", pub_params_size);
+
+        // generate query
+        let query_row = self.generate_query(SEED_0, self.params.db_dim_1, true, target_row);
+        assert_eq!(query_row.len(), (self.params.poly_len + 1) * db_rows);
+        let query_row_last_row: &[u64] = &query_row[self.params.poly_len * db_rows..];
+        assert_eq!(query_row_last_row.len(), db_rows);
+        let packed_query_row = pack_query(self.params, query_row_last_row);
+        (packed_query_row, pack_pub_params_row_1s)
     }
 
     pub fn decode_response(&self, response: &[u64]) -> Vec<u64> {

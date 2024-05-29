@@ -11,7 +11,8 @@ default = ["server"]
 server = []
 
 [dependencies]
-spiral-rs = { git = "https://github.com/menonsamir/spiral-rs.git", rev = "6929441" }
+# spiral-rs = { git = "https://github.com/menonsamir/spiral-rs.git", rev = "6929441" }
+spiral-rs = { path = "../spiral-rs/", default-features = false }
 rand = { version = "0.8.5", features = ["small_rng"] }
 rand_chacha = "0.3.1"
 serde_json = "1.0"
