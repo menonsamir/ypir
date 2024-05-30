@@ -1,5 +1,6 @@
 use log::debug;
-use rand::{Rng, SeedableRng};
+use rand::rngs::OsRng;
+use rand::{CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use spiral_rs::aligned_memory::AlignedMemory64;
@@ -9,6 +10,7 @@ use spiral_rs::{
 
 use crate::measurement::get_vec_pm_size_bytes;
 use crate::packing::condense_matrix;
+use crate::serialize::pack_vec_pm;
 
 use super::convolution::negacyclic_matrix_u32;
 use super::{constants::*, lwe::*, noise_analysis::measure_noise_width_squared, util::*};
@@ -342,11 +344,16 @@ impl<'a> YClient<'a> {
     pub fn generate_full_query(
         &self,
         target_idx: usize,
-    ) -> (AlignedMemory64, Vec<PolyMatrixNTT<'a>>) {
+    ) -> (Vec<u32>, AlignedMemory64, AlignedMemory64) {
         // setup
         let db_rows = 1 << (self.params.db_dim_1 + self.params.poly_len_log2);
-        let db_cols = self.params.instances * self.params.poly_len;
+        let db_cols = 1 << (self.params.db_dim_2 + self.params.poly_len_log2);
         let target_row = target_idx / db_cols;
+        let target_col = target_idx % db_cols;
+        debug!(
+            "Target item: {} ({}, {})",
+            target_idx, target_row, target_col
+        );
 
         // generate pub params
         let sk_reg = self.client().get_sk_reg();
@@ -367,6 +374,77 @@ impl<'a> YClient<'a> {
         }
         let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params_row_1s);
         debug!("pub params size: {} bytes", pub_params_size);
+        let pack_pub_params_row_1s_pm = pack_vec_pm(
+            self.params,
+            1,
+            self.params.t_exp_left,
+            &pack_pub_params_row_1s,
+        );
+
+        // generate query
+        let query_row = self.generate_query(SEED_0, self.params.db_dim_1, false, target_row);
+        let query_row_last_row: &[u64] = &query_row[self.lwe_params().n * db_rows..];
+        let mut aligned_query_packed = AlignedMemory64::new(query_row_last_row.len());
+        aligned_query_packed
+            .as_mut_slice()
+            .copy_from_slice(&query_row_last_row);
+        let packed_query_row = aligned_query_packed;
+        let packed_query_row_u32 = packed_query_row
+            .as_slice()
+            .iter()
+            .map(|x| *x as u32)
+            .collect::<Vec<_>>();
+
+        let query_col = self.generate_query(SEED_1, self.params.db_dim_2, true, target_col);
+        let query_col_last_row = &query_col[self.params.poly_len * db_cols..];
+        let packed_query_col = pack_query(self.params, query_col_last_row);
+        (
+            packed_query_row_u32,
+            packed_query_col,
+            pack_pub_params_row_1s_pm,
+        )
+    }
+
+    pub fn generate_full_query_simplepir(
+        &self,
+        target_idx: usize,
+    ) -> (AlignedMemory64, AlignedMemory64) {
+        // setup
+        let db_rows = 1 << (self.params.db_dim_1 + self.params.poly_len_log2);
+        let db_cols = self.params.instances * self.params.poly_len;
+
+        let target_row = target_idx / db_cols;
+        let target_col = target_idx % db_cols;
+        debug!(
+            "Target item: {} ({}, {})",
+            target_idx, target_row, target_col
+        );
+
+        // generate pub params
+        let sk_reg = self.client().get_sk_reg();
+        let pack_pub_params = raw_generate_expansion_params(
+            self.params,
+            &sk_reg,
+            self.params.poly_len_log2,
+            self.params.t_exp_left,
+            &mut ChaCha20Rng::from_entropy(),
+            &mut ChaCha20Rng::from_seed(STATIC_SEED_2),
+        );
+        // let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params) / 2;
+        let mut pack_pub_params_row_1s = pack_pub_params.to_vec();
+        for i in 0..pack_pub_params.len() {
+            pack_pub_params_row_1s[i] =
+                pack_pub_params[i].submatrix(1, 0, 1, pack_pub_params[i].cols);
+            pack_pub_params_row_1s[i] = condense_matrix(self.params, &pack_pub_params_row_1s[i]);
+        }
+        let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params_row_1s);
+        debug!("pub params size: {} bytes", pub_params_size);
+        let pack_pub_params_row_1s_pm = pack_vec_pm(
+            self.params,
+            1,
+            self.params.t_exp_left,
+            &pack_pub_params_row_1s,
+        );
 
         // generate query
         let query_row = self.generate_query(SEED_0, self.params.db_dim_1, true, target_row);
@@ -374,7 +452,12 @@ impl<'a> YClient<'a> {
         let query_row_last_row: &[u64] = &query_row[self.params.poly_len * db_rows..];
         assert_eq!(query_row_last_row.len(), db_rows);
         let packed_query_row = pack_query(self.params, query_row_last_row);
-        (packed_query_row, pack_pub_params_row_1s)
+
+        (packed_query_row, pack_pub_params_row_1s_pm)
+    }
+
+    fn lwe_params(&self) -> &LWEParams {
+        self.lwe_client().lwe_params()
     }
 
     pub fn decode_response(&self, response: &[u64]) -> Vec<u64> {
@@ -406,6 +489,50 @@ impl<'a> YClient<'a> {
         self.inner
     }
 }
+
+// type Seed = [u8; 32]; // <ChaCha20Rng as SeedableRng>::Seed;
+// fn generate_secure_random_seed() -> Seed {
+//     let mut seed = [0u8; 32];
+//     OsRng.fill_bytes(&mut seed);
+//     seed
+// }
+
+// pub struct YPIRClient {
+//     // inner: YClient<'static>,
+//     params: &'static Params,
+// }
+
+// pub type YPIRQuery = (Vec<u32>, AlignedMemory64, Vec<PolyMatrixNTT<'static>>);
+// pub type YPIRSimpleQuery = (AlignedMemory64, Vec<PolyMatrixNTT<'static>>);
+
+// impl YPIRClient {
+//     pub fn new(params: &'static Params) -> Self {
+//         Self { params }
+//     }
+
+//     pub fn generate_full_query(
+//         &self,
+//         target_idx: usize,
+//     ) -> (Vec<u32>, AlignedMemory64, Vec<PolyMatrixNTT<'static>>, Seed) {
+//         let client_seed = generate_secure_random_seed();
+//         let mut client = Client::init(self.params);
+//         client.generate_secret_keys_from_seed(client_seed);
+//         let y_client = YClient::new(&mut client, self.params);
+//         let query = y_client.generate_full_query(target_idx);
+//         (query.0, query.1, query.2, client_seed)
+//     }
+
+//     pub fn decode_response(&self, client_seed: Seed, response: &[u64]) -> Vec<u64> {
+//         let mut client = Client::init(self.params);
+//         client.generate_secret_keys_from_seed(client_seed);
+//         let y_client = YClient::new(&mut client, self.params);
+//         y_client.decode_response(response)
+//     }
+
+//     pub fn params(&self) -> &Params {
+//         self.params
+//     }
+// }
 
 #[cfg(test)]
 mod test {

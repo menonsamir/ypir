@@ -11,6 +11,7 @@ pub mod noise_analysis;
 pub mod params;
 pub mod transpose;
 pub mod util;
+pub mod serialize;
 
 #[cfg(feature = "server")]
 pub mod kernel;

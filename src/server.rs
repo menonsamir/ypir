@@ -10,10 +10,12 @@ use spiral_rs::aligned_memory::AlignedMemory64;
 use spiral_rs::{arith::*, client::*, params::*, poly::*};
 
 use crate::measurement::Measurement;
+use crate::serialize::unpack_vec_pm;
 
 use super::{
     bits::*,
     client::*,
+    constants::*,
     convolution::{negacyclic_perm_u32, Convolution},
     kernel::*,
     lwe::*,
@@ -21,7 +23,6 @@ use super::{
     modulus_switch::ModulusSwitch,
     packing::*,
     params::*,
-    constants::*,
     transpose::*,
     util::*,
 };
@@ -781,7 +782,7 @@ where
         &self,
         first_dim_queries_packed: &[u64],
         offline_vals: &OfflinePrecomputedValues<'a>,
-        pack_pub_params_row_1s: &[&[PolyMatrixNTT<'a>]],
+        pack_pub_params_row_1s: &[&[u64]],
         mut measurement: Option<&mut Measurement>,
     ) -> Vec<Vec<u8>> {
         assert!(self.ypir_params.is_simplepir);
@@ -825,13 +826,15 @@ where
 
         let ring_packing = Instant::now();
         let num_rlwe_outputs = db_cols / params.poly_len;
+        let pack_pub_params_row_1s_pms =
+            unpack_vec_pm(&params, 1, params.t_exp_left, pack_pub_params_row_1s[0]);
         let packed = pack_many_lwes(
             &params,
             &prepacked_lwe,
             &precomp,
             intermediate.as_slice(),
             num_rlwe_outputs,
-            &pack_pub_params_row_1s[0],
+            &pack_pub_params_row_1s_pms,
             &y_constants,
         );
         debug!("Packed...");
@@ -853,7 +856,7 @@ where
         &self,
         offline_vals: &mut OfflinePrecomputedValues<'a>,
         first_dim_queries_packed: &[u32],
-        second_dim_queries: &[(&[u64], &[PolyMatrixNTT<'a>])],
+        second_dim_queries: &[(&[u64], &[u64])],
         mut measurement: Option<&mut Measurement>,
     ) -> Vec<Vec<Vec<u8>>> {
         // Set up some parameters
@@ -1040,20 +1043,22 @@ where
 
             // assert_eq!(pack_pub_params_row_1s[0].rows, 1);
 
+            let pack_pub_params_row_1s_pms =
+                unpack_vec_pm(&params, 1, params.t_exp_left, pack_pub_params_row_1s);
             let mut packed = pack_many_lwes(
                 &params,
                 &prepacked_lwe,
                 &precomp,
                 response.as_slice(),
                 rho,
-                &pack_pub_params_row_1s,
+                &pack_pub_params_row_1s_pms,
                 &y_constants,
             );
 
             let now = Instant::now();
             let mut pack_pub_params = fake_pack_pub_params.clone();
             for i in 0..pack_pub_params.len() {
-                let uncondensed = uncondense_matrix(params, &pack_pub_params_row_1s[i]);
+                let uncondensed = uncondense_matrix(params, &pack_pub_params_row_1s_pms[i]);
                 pack_pub_params[i].copy_into(&uncondensed, 1, 0);
             }
             debug!("uncondense pub params: {} us", now.elapsed().as_micros());

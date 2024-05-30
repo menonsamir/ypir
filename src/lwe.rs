@@ -125,4 +125,8 @@ impl LWEClient {
 
         sum
     }
+
+    pub fn lwe_params(&self) -> &LWEParams {
+        &self.lwe_params
+    }
 }

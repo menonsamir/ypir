@@ -136,38 +136,39 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
 
             let start = Instant::now();
             client.generate_secret_keys();
-            let sk_reg = &client.get_sk_reg();
-            let pack_pub_params = raw_generate_expansion_params(
-                &params,
-                &sk_reg,
-                params.poly_len_log2,
-                params.t_exp_left,
-                &mut ChaCha20Rng::from_entropy(),
-                &mut ChaCha20Rng::from_seed(STATIC_SEED_2),
-            );
-            // let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params) / 2;
-            let mut pack_pub_params_row_1s = pack_pub_params.to_vec();
-            for i in 0..pack_pub_params.len() {
-                pack_pub_params_row_1s[i] =
-                    pack_pub_params[i].submatrix(1, 0, 1, pack_pub_params[i].cols);
-                pack_pub_params_row_1s[i] = condense_matrix(&params, &pack_pub_params_row_1s[i]);
-            }
-            let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params_row_1s);
-            debug!("pub params size: {} bytes", pub_params_size);
 
-            let y_client = YClient::new(client, &params);
-            let query_row = y_client.generate_query(SEED_0, params.db_dim_1, true, target_row);
-            assert_eq!(query_row.len(), (params.poly_len + 1) * db_rows);
-            let query_row_last_row: &[u64] = &query_row[params.poly_len * db_rows..];
-            assert_eq!(query_row_last_row.len(), db_rows);
-            let packed_query_row = pack_query(&params, query_row_last_row);
+            // let sk_reg = &client.get_sk_reg();
+            // let pack_pub_params = raw_generate_expansion_params(
+            //     &params,
+            //     &sk_reg,
+            //     params.poly_len_log2,
+            //     params.t_exp_left,
+            //     &mut ChaCha20Rng::from_entropy(),
+            //     &mut ChaCha20Rng::from_seed(STATIC_SEED_2),
+            // );
+            // // let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params) / 2;
+            // let mut pack_pub_params_row_1s = pack_pub_params.to_vec();
+            // for i in 0..pack_pub_params.len() {
+            //     pack_pub_params_row_1s[i] =
+            //         pack_pub_params[i].submatrix(1, 0, 1, pack_pub_params[i].cols);
+            //     pack_pub_params_row_1s[i] = condense_matrix(&params, &pack_pub_params_row_1s[i]);
+            // }
+            // let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params_row_1s);
+            // debug!("pub params size: {} bytes", pub_params_size);
+
             // let y_client = YClient::new(client, &params);
-            // let (packed_query_row, pack_pub_params_row_1s) =
-            //     y_client.generate_full_query(target_idx);
+            // let query_row = y_client.generate_query(SEED_0, params.db_dim_1, true, target_row);
+            // assert_eq!(query_row.len(), (params.poly_len + 1) * db_rows);
+            // let query_row_last_row: &[u64] = &query_row[params.poly_len * db_rows..];
+            // assert_eq!(query_row_last_row.len(), db_rows);
+            // let packed_query_row = pack_query(&params, query_row_last_row);
+            let y_client = YClient::new(client, &params);
+            let (packed_query_row, pack_pub_params_row_1s) =
+                y_client.generate_full_query_simplepir(target_idx);
 
             let query_size = ((packed_query_row.len() as f64 * params.modulus_log2 as f64) / 8.0)
                 .ceil() as usize;
-            let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params_row_1s);
+            let pub_params_size = pack_pub_params_row_1s.len() * params.modulus_log2 as usize / 8;
             let total_query_size = query_size + pub_params_size;
 
             measurement.online.client_query_gen_time_ms = start.elapsed().as_millis() as usize;
@@ -422,53 +423,22 @@ pub fn run_ypir_on_params<const K: usize>(
 
         for (_batch, client) in (0..K).zip(clients.iter_mut()) {
             let target_idx: usize = rng.gen::<usize>() % (db_rows * db_cols);
-            let target_row = target_idx / db_cols;
-            let target_col = target_idx % db_cols;
-            debug!(
-                "Target item: {} ({}, {})",
-                target_idx, target_row, target_col
-            );
+            // let target_row = target_idx / db_cols;
+            // let target_col = target_idx % db_cols;
+            // debug!(
+            //     "Target item: {} ({}, {})",
+            //     target_idx, target_row, target_col
+            // );
 
             let start = Instant::now();
             client.generate_secret_keys();
-            let sk_reg = &client.get_sk_reg();
-            let pack_pub_params = raw_generate_expansion_params(
-                &params,
-                &sk_reg,
-                params.poly_len_log2,
-                params.t_exp_left,
-                &mut ChaCha20Rng::from_entropy(),
-                &mut ChaCha20Rng::from_seed(STATIC_SEED_2),
-            );
-            // let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params) / 2;
-            let mut pack_pub_params_row_1s = pack_pub_params.to_vec();
-            for i in 0..pack_pub_params.len() {
-                pack_pub_params_row_1s[i] =
-                    pack_pub_params[i].submatrix(1, 0, 1, pack_pub_params[i].cols);
-                pack_pub_params_row_1s[i] = condense_matrix(&params, &pack_pub_params_row_1s[i]);
-            }
-            let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params_row_1s);
-            debug!("pub params size: {} bytes", pub_params_size);
 
             let y_client = YClient::new(client, &params);
-            let query_row = y_client.generate_query(SEED_0, params.db_dim_1, false, target_row);
-            let query_row_last_row: &[u64] = &query_row[lwe_params.n * db_rows..];
-            let mut aligned_query_packed = AlignedMemory64::new(query_row_last_row.len());
-            aligned_query_packed
-                .as_mut_slice()
-                .copy_from_slice(&query_row_last_row);
-            let packed_query_row = aligned_query_packed;
-            let packed_query_row_u32 = packed_query_row
-                .as_slice()
-                .iter()
-                .map(|x| *x as u32)
-                .collect::<Vec<_>>();
+            let (packed_query_row_u32, packed_query_col, pack_pub_params_row_1s) =
+                y_client.generate_full_query(target_idx);
 
-            let query_col = y_client.generate_query(SEED_1, params.db_dim_2, true, target_col);
-            let query_col_last_row = &query_col[params.poly_len * db_cols..];
-            let packed_query_col = pack_query(&params, query_col_last_row);
-
-            let query_size = query_row_last_row.len() * 4 + query_col_last_row.len() * 8;
+            let query_size = packed_query_row_u32.len() * 4 + packed_query_col.len() * 8;
+            let pub_params_size = pack_pub_params_row_1s.len() * params.modulus_log2 as usize / 8;
 
             measurement.online.client_query_gen_time_ms = start.elapsed().as_millis() as usize;
             debug!("Generated query in {} us", start.elapsed().as_micros());
