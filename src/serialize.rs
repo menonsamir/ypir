@@ -1,5 +1,105 @@
 use spiral_rs::{aligned_memory::AlignedMemory64, params::*, poly::*};
 
+use crate::client::{YPIRQuery, YPIRSimpleQuery};
+
+pub trait ToBytes {
+    fn to_bytes(&self) -> Vec<u8>;
+}
+
+pub trait AsBytes {
+    fn as_bytes(&self) -> &[u8];
+}
+
+pub trait FromBytes {
+    fn from_bytes(data: &[u8]) -> Self;
+}
+
+impl ToBytes for &[u32] {
+    fn to_bytes(&self) -> Vec<u8> {
+        // fast
+        unsafe {
+            let ptr = self.as_ptr() as *const u8;
+            std::slice::from_raw_parts(ptr, self.len() * 4).to_vec()
+        }
+    }
+}
+
+impl AsBytes for &[u32] {
+    fn as_bytes(&self) -> &[u8] {
+        // fast
+        unsafe {
+            let ptr = self.as_ptr() as *const u8;
+            std::slice::from_raw_parts(ptr, self.len() * 4)
+        }
+    }
+}
+
+impl FromBytes for Vec<u32> {
+    fn from_bytes(data: &[u8]) -> Self {
+        // fast
+        unsafe {
+            let mut out = Vec::with_capacity(data.len() / 4);
+            let u8_mut = std::slice::from_raw_parts(data.as_ptr(), data.len());
+            out.set_len(data.len() / 4);
+            let ptr = out.as_mut_ptr() as *mut u8;
+            std::ptr::copy_nonoverlapping(u8_mut.as_ptr(), ptr, data.len());
+            out
+        }
+    }
+}
+
+impl ToBytes for &[u64] {
+    fn to_bytes(&self) -> Vec<u8> {
+        // fast
+        unsafe {
+            let ptr = self.as_ptr() as *const u8;
+            std::slice::from_raw_parts(ptr, self.len() * 8).to_vec()
+        }
+    }
+}
+
+impl AsBytes for &[u64] {
+    fn as_bytes(&self) -> &[u8] {
+        // fast
+        unsafe {
+            let ptr = self.as_ptr() as *const u8;
+            std::slice::from_raw_parts(ptr, self.len() * 8)
+        }
+    }
+}
+
+impl FromBytes for AlignedMemory64 {
+    fn from_bytes(data: &[u8]) -> Self {
+        // fast
+        unsafe {
+            let mut out = AlignedMemory64::new(data.len() / 8);
+            let u8_mut = std::slice::from_raw_parts(data.as_ptr(), data.len());
+            let ptr = out.as_mut_ptr() as *mut u8;
+            std::ptr::copy_nonoverlapping(u8_mut.as_ptr(), ptr, data.len());
+            out
+        }
+    }
+}
+
+impl ToBytes for YPIRQuery {
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(self.0.as_slice().as_bytes());
+        out.extend_from_slice(self.1.as_slice().as_bytes());
+        out.extend_from_slice(self.2.as_slice().as_bytes());
+        out
+    }
+}
+
+impl ToBytes for YPIRSimpleQuery {
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(self.0.as_slice().as_bytes());
+        out.extend_from_slice(self.1.as_slice().as_bytes());
+        out
+    }
+}
+
 pub fn pack_vec_pm(
     params: &Params,
     rows: usize,

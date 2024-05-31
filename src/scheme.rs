@@ -208,7 +208,7 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
             Some(&mut measurement),
         )];
         let online_server_time_ms = start_online_comp.elapsed().as_millis();
-        let online_download_bytes = get_size_bytes(&responses); // TODO: this is not quite right for multiple clients
+        let online_download_bytes = get_size_bytes(&[responses.clone()]); // TODO: this is not quite right for multiple clients
 
         // check correctness
         for (response_switched, (y_client, target_idx, _, _)) in
@@ -221,34 +221,18 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
                 .map(|x| x.to_u64())
                 .collect::<Vec<_>>();
 
-            // let scheme_params = YPIRSchemeParams::from_params(&params, &lwe_params);
+            // let scheme_params = YPIRSchemeParams::from_params(&params, &LWEParams::default());
             // let log2_corr_err = scheme_params.delta().log2();
             // let log2_expected_outer_noise = scheme_params.expected_outer_noise().log2();
             // debug!("log2_correctness_err: {}", log2_corr_err);
             // debug!("log2_expected_outer_noise: {}", log2_expected_outer_noise);
 
             let start_decode = Instant::now();
-
-            debug!("rescaling response...");
-            let mut response = Vec::new();
-            for ct_bytes in response_switched.iter() {
-                let ct = PolyMatrixRaw::recover(&params, rlwe_q_prime_1, rlwe_q_prime_2, ct_bytes);
-                response.push(ct);
-            }
-
-            debug!("decrypting outer cts...");
-            let outer_ct = response
-                .iter()
-                .flat_map(|ct| {
-                    decrypt_ct_reg_measured(y_client.client(), &params, &ct.ntt(), params.poly_len)
-                        .as_slice()
-                        .to_vec()
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(outer_ct.len(), num_rlwe_outputs * params.poly_len);
-            // debug!("outer_ct: {:?}", &outer_ct[..]);
-            // let outer_ct_t_u8 = u64s_to_contiguous_bytes(&outer_ct, pt_bits);
-            let final_result = outer_ct.as_slice();
+            let final_result = YPIRClient::decode_response_simplepir_yclient(
+                &params,
+                &y_client,
+                response_switched,
+            );
             measurement.online.client_decode_time_ms = start_decode.elapsed().as_millis() as usize;
 
             // debug!("got      {:?}", &final_result[..256]);
@@ -481,14 +465,13 @@ pub fn run_ypir_on_params<const K: usize>(
             Some(&mut measurement),
         );
         let online_server_time_ms = start_online_comp.elapsed().as_millis();
-        let online_download_bytes = get_size_bytes(&responses); // TODO: this is not quite right for multiple clients
+        let online_download_bytes = get_size_bytes(&[responses.clone()]); // TODO: this is not quite right for multiple clients
 
         // check correctness
         for (response_switched, (y_client, target_idx, _, _, _)) in
             responses.iter().zip(queries.iter())
         {
-            let (target_row, target_col) = (target_idx / db_cols, target_idx % db_cols);
-            let corr_result = y_server.get_elem(target_row, target_col).to_u64();
+            let corr_result = y_server.get_elem(*target_idx).to_u64();
 
             let scheme_params = YPIRSchemeParams::from_params(&params, &lwe_params);
             let log2_corr_err = scheme_params.delta().log2();
@@ -496,71 +479,8 @@ pub fn run_ypir_on_params<const K: usize>(
             debug!("log2_correctness_err: {}", log2_corr_err);
             debug!("log2_expected_outer_noise: {}", log2_expected_outer_noise);
 
-            let start_decode = Instant::now();
-
-            debug!("rescaling response...");
-            let mut response = Vec::new();
-            for ct_bytes in response_switched.iter() {
-                let ct = PolyMatrixRaw::recover(&params, rlwe_q_prime_1, rlwe_q_prime_2, ct_bytes);
-                response.push(ct);
-            }
-
-            debug!("decrypting outer cts...");
-            let outer_ct = response
-                .iter()
-                .flat_map(|ct| {
-                    decrypt_ct_reg_measured(y_client.client(), &params, &ct.ntt(), params.poly_len)
-                        .as_slice()
-                        .to_vec()
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(outer_ct.len(), out_rows);
-            // debug!("outer_ct: {:?}", &outer_ct[..]);
-            let outer_ct_t_u8 = u64s_to_contiguous_bytes(&outer_ct, pt_bits);
-
-            let mut inner_ct = PolyMatrixRaw::zero(&params, 2, 1);
-            let mut bit_offs = 0;
-            let lwe_q_prime = lwe_params.get_q_prime_2();
-            let special_offs =
-                ((lwe_params.n * lwe_q_prime_bits) as f64 / pt_bits as f64).ceil() as usize;
-            for z in 0..lwe_params.n {
-                let val = read_bits(&outer_ct_t_u8, bit_offs, lwe_q_prime_bits);
-                bit_offs += lwe_q_prime_bits;
-                assert!(
-                    val < lwe_q_prime,
-                    "val: {}, lwe_q_prime: {}",
-                    val,
-                    lwe_q_prime
-                );
-                inner_ct.data[z] = rescale(val, lwe_q_prime, lwe_params.modulus);
-            }
-
-            let mut val = 0;
-            for i in 0..blowup_factor.ceil() as usize {
-                val |= outer_ct[special_offs + i] << (i * pt_bits);
-            }
-            assert!(
-                val < lwe_q_prime,
-                "val: {}, lwe_q_prime: {}",
-                val,
-                lwe_q_prime
-            );
-            debug!("got b_val of: {}", val);
-            inner_ct.data[lwe_params.n] = rescale(val, lwe_q_prime, lwe_params.modulus);
-
-            debug!("decrypting inner ct...");
-            // let plaintext = decrypt_ct_reg_measured(y_client.client(), &params, &inner_ct.ntt(), 1);
-            // let final_result = plaintext.data[0];
-            let inner_ct_as_u32 = inner_ct
-                .as_slice()
-                .iter()
-                .take(lwe_params.n + 1)
-                .map(|x| *x as u32)
-                .collect::<Vec<_>>();
-            let decrypted = y_client.lwe_client().decrypt(&inner_ct_as_u32);
-            let final_result = rescale(decrypted as u64, lwe_params.modulus, lwe_params.pt_modulus);
-
-            measurement.online.client_decode_time_ms = start_decode.elapsed().as_millis() as usize;
+            let final_result =
+                YPIRClient::decode_response_normal_yclient(&params, y_client, &response_switched);
 
             debug!("got {}, expected {}", final_result, corr_result);
             // debug!("was correct? {}", final_result == corr_result);
@@ -613,6 +533,8 @@ fn std_dev(xs: &[usize]) -> f64 {
 
 #[cfg(test)]
 mod test {
+    use crate::serialize::ToBytes;
+
     use super::*;
     use test_log::test;
 
@@ -624,6 +546,52 @@ mod test {
     #[test]
     fn test_ypir_simplepir_basic() {
         run_ypir_batched(1 << 14, 16384 * 8, 1, true, 1);
+    }
+
+    #[test]
+    fn test_ypirclient() {
+        let params = params_for_scenario(1 << 30, 1);
+        let pt_iter = std::iter::repeat_with(|| u8::sample());
+        let y_server = YServer::<u8>::new(&params, pt_iter, false, false, true);
+        let mut offline_values = y_server.perform_offline_precomputation(None);
+
+        let target_idx = fastrand::usize(..params.num_db_items(false));
+
+        let client = YPIRClient::from_db_sz(1u64 << 30, 1, false);
+        let (query, client_seed) = client.generate_query_normal(target_idx);
+
+        let query_bytes = query.to_bytes();
+        let response = y_server.perform_full_online_computation(&mut offline_values, &query_bytes);
+
+        let decoded = client.decode_response_normal(client_seed, &response);
+        let corr_result = y_server.get_elem(target_idx).to_u64();
+
+        assert_eq!(decoded, corr_result);
+    }
+
+    #[test]
+    fn test_ypirclient_simplepir() {
+        let params = params_for_scenario_simplepir(1 << 14, 16384 * 8);
+        let pt_iter = std::iter::repeat_with(|| (u16::sample() as u64 % params.pt_modulus) as u16);
+        let y_server = YServer::<u16>::new(&params, pt_iter, true, false, true);
+        let mut offline_values = y_server.perform_offline_precomputation_simplepir(None);
+
+        let target_idx = fastrand::usize(..params.num_db_items(true));
+
+        let client = YPIRClient::from_db_sz(1 << 14, 16384 * 8, true);
+        let (query, client_seed) = client.generate_query_simplepir(target_idx);
+        let query_bytes = query.to_bytes();
+        let response =
+            y_server.perform_full_online_computation_simplepir(&mut offline_values, &query_bytes);
+
+        let decoded = client.decode_response_simplepir(client_seed, &response);
+        let corr_result = y_server
+            .get_row(target_idx / (params.instances * params.poly_len))
+            .iter()
+            .map(|x| x.to_u64())
+            .collect::<Vec<_>>();
+
+        assert_eq!(decoded, corr_result);
     }
 
     #[test]

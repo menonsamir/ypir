@@ -8,9 +8,14 @@ use spiral_rs::{
     arith::*, client::*, discrete_gaussian::*, gadget::*, number_theory::*, params::*, poly::*,
 };
 
+use crate::bits::{read_bits, u64s_to_contiguous_bytes};
 use crate::measurement::get_vec_pm_size_bytes;
+use crate::modulus_switch::ModulusSwitch;
 use crate::packing::condense_matrix;
+use crate::params::{params_for_scenario, params_for_scenario_simplepir, GetQPrime, GetRho};
+use crate::seed::{generate_secure_random_seed, Seed};
 use crate::serialize::pack_vec_pm;
+use crate::server::DbRowsPadded;
 
 use super::convolution::negacyclic_matrix_u32;
 use super::{constants::*, lwe::*, noise_analysis::measure_noise_width_squared, util::*};
@@ -174,6 +179,14 @@ impl<'a> YClient<'a> {
             inner,
             params,
             lwe_client: LWEClient::new(LWEParams::default()),
+        }
+    }
+
+    pub fn from_seed(inner: &'a mut Client<'a>, params: &'a Params, client_seed: Seed) -> Self {
+        Self {
+            inner,
+            params,
+            lwe_client: LWEClient::from_seed(LWEParams::default(), client_seed),
         }
     }
 
@@ -380,6 +393,14 @@ impl<'a> YClient<'a> {
             self.params.t_exp_left,
             &pack_pub_params_row_1s,
         );
+        // 11*3*2048*8 bytes (technically 7)
+        assert_eq!(
+            pack_pub_params_row_1s_pm.len() * std::mem::size_of::<u64>(),
+            self.params.poly_len_log2
+                * self.params.t_exp_left
+                * self.params.poly_len
+                * std::mem::size_of::<u64>()
+        );
 
         // generate query
         let query_row = self.generate_query(SEED_0, self.params.db_dim_1, false, target_row);
@@ -393,11 +414,14 @@ impl<'a> YClient<'a> {
             .as_slice()
             .iter()
             .map(|x| *x as u32)
+            .chain(std::iter::repeat(0).take(self.params.db_rows_padded() - db_rows))
             .collect::<Vec<_>>();
+        assert_eq!(packed_query_row_u32.len(), self.params.db_rows_padded());
 
         let query_col = self.generate_query(SEED_1, self.params.db_dim_2, true, target_col);
         let query_col_last_row = &query_col[self.params.poly_len * db_cols..];
         let packed_query_col = pack_query(self.params, query_col_last_row);
+        assert_eq!(packed_query_col.len(), db_cols);
         (
             packed_query_row_u32,
             packed_query_col,
@@ -445,6 +469,13 @@ impl<'a> YClient<'a> {
             self.params.t_exp_left,
             &pack_pub_params_row_1s,
         );
+        assert_eq!(
+            pack_pub_params_row_1s_pm.len() * std::mem::size_of::<u64>(),
+            self.params.poly_len_log2
+                * self.params.t_exp_left
+                * self.params.poly_len
+                * std::mem::size_of::<u64>()
+        );
 
         // generate query
         let query_row = self.generate_query(SEED_0, self.params.db_dim_1, true, target_row);
@@ -452,6 +483,7 @@ impl<'a> YClient<'a> {
         let query_row_last_row: &[u64] = &query_row[self.params.poly_len * db_rows..];
         assert_eq!(query_row_last_row.len(), db_rows);
         let packed_query_row = pack_query(self.params, query_row_last_row);
+        assert_eq!(packed_query_row.len(), self.params.db_rows());
 
         (packed_query_row, pack_pub_params_row_1s_pm)
     }
@@ -490,49 +522,195 @@ impl<'a> YClient<'a> {
     }
 }
 
-// type Seed = [u8; 32]; // <ChaCha20Rng as SeedableRng>::Seed;
-// fn generate_secure_random_seed() -> Seed {
-//     let mut seed = [0u8; 32];
-//     OsRng.fill_bytes(&mut seed);
-//     seed
-// }
+pub struct YPIRClient {
+    params: Params,
+}
 
-// pub struct YPIRClient {
-//     // inner: YClient<'static>,
-//     params: &'static Params,
-// }
+pub type YPIRQuery = (Vec<u32>, AlignedMemory64, AlignedMemory64);
+pub type YPIRSimpleQuery = (AlignedMemory64, AlignedMemory64);
 
-// pub type YPIRQuery = (Vec<u32>, AlignedMemory64, Vec<PolyMatrixNTT<'static>>);
-// pub type YPIRSimpleQuery = (AlignedMemory64, Vec<PolyMatrixNTT<'static>>);
+impl YPIRClient {
+    pub fn new(params: &Params) -> Self {
+        Self {
+            params: params.clone(),
+        }
+    }
 
-// impl YPIRClient {
-//     pub fn new(params: &'static Params) -> Self {
-//         Self { params }
-//     }
+    pub fn from_db_sz(num_items: u64, item_size_bits: u64, is_simplepir: bool) -> Self {
+        let params = if is_simplepir {
+            params_for_scenario_simplepir(num_items, item_size_bits)
+        } else {
+            params_for_scenario(num_items, item_size_bits)
+        };
+        Self::new(&params)
+    }
 
-//     pub fn generate_full_query(
-//         &self,
-//         target_idx: usize,
-//     ) -> (Vec<u32>, AlignedMemory64, Vec<PolyMatrixNTT<'static>>, Seed) {
-//         let client_seed = generate_secure_random_seed();
-//         let mut client = Client::init(self.params);
-//         client.generate_secret_keys_from_seed(client_seed);
-//         let y_client = YClient::new(&mut client, self.params);
-//         let query = y_client.generate_full_query(target_idx);
-//         (query.0, query.1, query.2, client_seed)
-//     }
+    pub fn generate_query_normal(&self, target_idx: usize) -> (YPIRQuery, Seed) {
+        let client_seed = generate_secure_random_seed();
+        let mut client = Client::init(&self.params);
+        client.generate_secret_keys_from_seed(client_seed);
+        let y_client = YClient::from_seed(&mut client, &self.params, client_seed);
+        let query = y_client.generate_full_query(target_idx);
+        (query, client_seed)
+    }
 
-//     pub fn decode_response(&self, client_seed: Seed, response: &[u64]) -> Vec<u64> {
-//         let mut client = Client::init(self.params);
-//         client.generate_secret_keys_from_seed(client_seed);
-//         let y_client = YClient::new(&mut client, self.params);
-//         y_client.decode_response(response)
-//     }
+    pub fn generate_query_simplepir(&self, target_idx: usize) -> (YPIRSimpleQuery, Seed) {
+        let client_seed = generate_secure_random_seed();
+        let mut client = Client::init(&self.params);
+        client.generate_secret_keys_from_seed(client_seed);
+        let y_client = YClient::from_seed(&mut client, &self.params, client_seed);
+        let query = y_client.generate_full_query_simplepir(target_idx);
+        (query, client_seed)
+    }
 
-//     pub fn params(&self) -> &Params {
-//         self.params
-//     }
-// }
+    pub fn decode_response_normal(&self, client_seed: Seed, response_data: &[u8]) -> u64 {
+        let mut client = Client::init(&self.params);
+        client.generate_secret_keys_from_seed(client_seed);
+        let y_client = YClient::from_seed(&mut client, &self.params, client_seed);
+        let out =
+            YPIRClient::decode_response_normal_yclient(&self.params, &y_client, response_data);
+        out
+    }
+
+    pub fn decode_response_simplepir(&self, client_seed: Seed, response_data: &[u8]) -> Vec<u64> {
+        let mut client = Client::init(&self.params);
+        client.generate_secret_keys_from_seed(client_seed);
+        let y_client = YClient::from_seed(&mut client, &self.params, client_seed);
+        let out =
+            YPIRClient::decode_response_simplepir_yclient(&self.params, &y_client, response_data);
+        out
+    }
+
+    pub fn decode_response_normal_yclient(
+        params: &Params,
+        y_client: &YClient,
+        response_data: &[u8],
+    ) -> u64 {
+        let num_rlwe_outputs = params.rho();
+        assert_eq!(response_data.len() % num_rlwe_outputs, 0);
+        let response_vecs = response_data
+            .chunks_exact(response_data.len() / num_rlwe_outputs)
+            .map(|chunk| chunk.to_vec())
+            .collect::<Vec<_>>();
+
+        // rescale
+        let rlwe_q_prime_1 = params.get_q_prime_1();
+        let rlwe_q_prime_2 = params.get_q_prime_2();
+        let mut response: Vec<PolyMatrixRaw> = Vec::new();
+        for ct_bytes in response_vecs.iter() {
+            let ct = PolyMatrixRaw::recover(&params, rlwe_q_prime_1, rlwe_q_prime_2, ct_bytes);
+            response.push(ct);
+        }
+
+        let lwe_params = LWEParams::default();
+        let lwe_q_prime_bits = lwe_params.q2_bits as usize;
+        let pt_bits = (params.pt_modulus as f64).log2().floor() as usize;
+        let blowup_factor = lwe_q_prime_bits as f64 / pt_bits as f64;
+
+        // decrypt
+        let outer_ct = response
+            .iter()
+            .flat_map(|ct| {
+                decrypt_ct_reg_measured(y_client.client(), &params, &ct.ntt(), params.poly_len)
+                    .as_slice()
+                    .to_vec()
+            })
+            .collect::<Vec<_>>();
+        // assert_eq!(outer_ct.len(), out_rows);
+        // debug!("outer_ct: {:?}", &outer_ct[..]);
+        let outer_ct_t_u8 = u64s_to_contiguous_bytes(&outer_ct, pt_bits);
+
+        let mut inner_ct = PolyMatrixRaw::zero(&params, 2, 1);
+        let mut bit_offs = 0;
+        let lwe_q_prime = lwe_params.get_q_prime_2();
+        let special_offs =
+            ((lwe_params.n * lwe_q_prime_bits) as f64 / pt_bits as f64).ceil() as usize;
+        for z in 0..lwe_params.n {
+            let val = read_bits(&outer_ct_t_u8, bit_offs, lwe_q_prime_bits);
+            bit_offs += lwe_q_prime_bits;
+            assert!(
+                val < lwe_q_prime,
+                "val: {}, lwe_q_prime: {}",
+                val,
+                lwe_q_prime
+            );
+            inner_ct.data[z] = rescale(val, lwe_q_prime, lwe_params.modulus);
+        }
+
+        let mut val = 0;
+        for i in 0..blowup_factor.ceil() as usize {
+            val |= outer_ct[special_offs + i] << (i * pt_bits);
+        }
+        assert!(
+            val < lwe_q_prime,
+            "val: {}, lwe_q_prime: {}",
+            val,
+            lwe_q_prime
+        );
+        debug!("got b_val of: {}", val);
+        inner_ct.data[lwe_params.n] = rescale(val, lwe_q_prime, lwe_params.modulus);
+
+        debug!("decrypting inner ct...");
+        // let plaintext = decrypt_ct_reg_measured(y_client.client(), &params, &inner_ct.ntt(), 1);
+        // let final_result = plaintext.data[0];
+        let inner_ct_as_u32 = inner_ct
+            .as_slice()
+            .iter()
+            .take(lwe_params.n + 1)
+            .map(|x| *x as u32)
+            .collect::<Vec<_>>();
+        let decrypted = y_client.lwe_client().decrypt(&inner_ct_as_u32);
+        let final_result = rescale(decrypted as u64, lwe_params.modulus, lwe_params.pt_modulus);
+
+        final_result
+    }
+
+    pub fn decode_response_simplepir_yclient(
+        params: &Params,
+        y_client: &YClient,
+        response_data: &[u8],
+    ) -> Vec<u64> {
+        let db_cols = params.instances * params.poly_len;
+        let num_rlwe_outputs = db_cols / params.poly_len;
+
+        assert_eq!(response_data.len() % num_rlwe_outputs, 0);
+        let response_vecs = response_data
+            .chunks_exact(response_data.len() / num_rlwe_outputs)
+            .map(|chunk| chunk.to_vec())
+            .collect::<Vec<_>>();
+
+        for i in 0..response_vecs.len() {
+            println!("response_vecs[{}].len(): {}", i, response_vecs[i].len());
+        }
+
+        // rescale
+        let rlwe_q_prime_1 = params.get_q_prime_1();
+        let rlwe_q_prime_2 = params.get_q_prime_2();
+        let mut response = Vec::new();
+        for ct_bytes in response_vecs.iter() {
+            let ct = PolyMatrixRaw::recover(&params, rlwe_q_prime_1, rlwe_q_prime_2, ct_bytes);
+            response.push(ct);
+        }
+
+        debug!("decrypting outer cts...");
+        let outer_ct = response
+            .iter()
+            .flat_map(|ct| {
+                decrypt_ct_reg_measured(y_client.client(), &params, &ct.ntt(), params.poly_len)
+                    .as_slice()
+                    .to_vec()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(outer_ct.len(), num_rlwe_outputs * params.poly_len);
+        // debug!("outer_ct: {:?}", &outer_ct[..]);
+        // let outer_ct_t_u8 = u64s_to_contiguous_bytes(&outer_ct, pt_bits);
+        outer_ct
+    }
+
+    pub fn params(&self) -> &Params {
+        &self.params
+    }
+}
 
 #[cfg(test)]
 mod test {

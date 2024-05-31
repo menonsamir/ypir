@@ -10,7 +10,7 @@ use spiral_rs::aligned_memory::AlignedMemory64;
 use spiral_rs::{arith::*, client::*, params::*, poly::*};
 
 use crate::measurement::Measurement;
-use crate::serialize::unpack_vec_pm;
+use crate::serialize::{unpack_vec_pm, FromBytes};
 
 use super::{
     bits::*,
@@ -166,15 +166,18 @@ pub struct YServer<'a, T> {
 }
 
 pub trait DbRowsPadded {
+    fn db_rows(&self) -> usize;
     fn db_rows_padded(&self) -> usize;
 }
 
 impl DbRowsPadded for Params {
+    fn db_rows(&self) -> usize {
+        let db_rows = 1 << (self.db_dim_1 + self.poly_len_log2);
+        db_rows
+    }
     fn db_rows_padded(&self) -> usize {
         let db_rows = 1 << (self.db_dim_1 + self.poly_len_log2);
         db_rows
-        // let db_rows_padded = db_rows + db_rows / (16 * 8);
-        // db_rows_padded
     }
 }
 
@@ -264,6 +267,10 @@ where
             pad_rows,
             ypir_params,
         }
+    }
+
+    pub fn db_rows(&self) -> usize {
+        1 << (self.params.db_dim_1 + self.params.poly_len_log2)
     }
 
     pub fn db_rows_padded(&self) -> usize {
@@ -784,7 +791,7 @@ where
         offline_vals: &OfflinePrecomputedValues<'a>,
         pack_pub_params_row_1s: &[&[u64]],
         mut measurement: Option<&mut Measurement>,
-    ) -> Vec<Vec<u8>> {
+    ) -> Vec<u8> {
         assert!(self.ypir_params.is_simplepir);
 
         // Set up some parameters
@@ -849,7 +856,16 @@ where
             packed_mod_switched.push(res_switched);
         }
 
-        packed_mod_switched
+        assert_eq!(packed_mod_switched.len(), num_rlwe_outputs);
+
+        let concated = packed_mod_switched
+            .iter()
+            .map(|x| x.as_slice())
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
+
+        concated
     }
 
     pub fn perform_online_computation<const K: usize>(
@@ -858,7 +874,7 @@ where
         first_dim_queries_packed: &[u32],
         second_dim_queries: &[(&[u64], &[u64])],
         mut measurement: Option<&mut Measurement>,
-    ) -> Vec<Vec<Vec<u8>>> {
+    ) -> Vec<Vec<u8>> {
         // Set up some parameters
 
         let params = self.params;
@@ -1088,7 +1104,12 @@ where
             // (and some padding)
             assert_eq!(packed.len(), rho);
 
-            responses.push(packed_mod_switched);
+            let concated = packed_mod_switched
+                .into_iter()
+                .flat_map(|x| x.into_iter())
+                .collect::<Vec<_>>();
+
+            responses.push(concated);
         }
         debug!(
             "Total online time: {} us",
@@ -1101,7 +1122,68 @@ where
             m.online.ring_packing_time_ms = ring_packing_time_ms as usize;
         }
 
+        assert_eq!(responses.len(), K);
+
         responses
+    }
+
+    pub fn perform_full_online_computation(
+        &self,
+        offline_vals: &mut OfflinePrecomputedValues<'a>,
+        query: &[u8],
+    ) -> Vec<u8> {
+        let first_dim_bytes_sz = self.params.db_rows_padded() * std::mem::size_of::<u32>();
+        let second_dim_bytes_sz = self.db_cols() * std::mem::size_of::<u64>();
+        let pub_param_bytes_sz = self.params.poly_len_log2
+            * self.params.t_exp_left
+            * self.params.poly_len
+            * std::mem::size_of::<u64>();
+        assert_eq!(
+            query.len(),
+            first_dim_bytes_sz + second_dim_bytes_sz + pub_param_bytes_sz
+        );
+
+        let first_dim_bytes = &query[..first_dim_bytes_sz];
+        let second_dim_bytes = &query[first_dim_bytes_sz..first_dim_bytes_sz + second_dim_bytes_sz];
+        let pub_param_bytes = &query[first_dim_bytes_sz + second_dim_bytes_sz..];
+
+        let first_dim = Vec::<u32>::from_bytes(first_dim_bytes);
+        let second_dim = AlignedMemory64::from_bytes(second_dim_bytes);
+        let pub_params = AlignedMemory64::from_bytes(pub_param_bytes);
+
+        self.perform_online_computation::<1>(
+            offline_vals,
+            &first_dim,
+            &[(second_dim.as_slice(), pub_params.as_slice())],
+            None,
+        )
+        .remove(0)
+    }
+
+    pub fn perform_full_online_computation_simplepir(
+        &self,
+        offline_vals: &mut OfflinePrecomputedValues<'a>,
+        query: &[u8],
+    ) -> Vec<u8> {
+        let first_dim_bytes_sz = self.params.db_rows() * std::mem::size_of::<u64>();
+        let pub_param_bytes_sz = self.params.poly_len_log2
+            * self.params.t_exp_left
+            * self.params.poly_len
+            * std::mem::size_of::<u64>();
+        assert_eq!(query.len(), first_dim_bytes_sz + pub_param_bytes_sz);
+
+        let first_dim_bytes = &query[..first_dim_bytes_sz];
+        let pub_param_bytes = &query[first_dim_bytes_sz..];
+
+        let first_dim = AlignedMemory64::from_bytes(first_dim_bytes);
+        let pub_params = AlignedMemory64::from_bytes(pub_param_bytes);
+
+        self.perform_online_computation_simplepir(
+            first_dim.as_slice(),
+            offline_vals,
+            &[pub_params.as_slice()],
+            None,
+        )
     }
 
     // generic function that returns a u8 or u16:
@@ -1141,7 +1223,13 @@ where
         }
     }
 
-    pub fn get_elem(&self, row: usize, col: usize) -> T {
+    pub fn get_elem(&self, target_idx: usize) -> T {
+        let db_cols = self.db_cols();
+        let (target_row, target_col) = (target_idx / db_cols, target_idx % db_cols);
+        self.get_elem_row_col(target_row, target_col)
+    }
+
+    pub fn get_elem_row_col(&self, row: usize, col: usize) -> T {
         self.db()[col * self.db_rows_padded() + row] // stored transposed
     }
 
@@ -1149,7 +1237,7 @@ where
         let db_cols = self.db_cols();
         let mut res = Vec::with_capacity(db_cols);
         for col in 0..db_cols {
-            res.push(self.get_elem(row, col));
+            res.push(self.get_elem_row_col(row, col));
         }
         res
         // // convert to u8 contiguously

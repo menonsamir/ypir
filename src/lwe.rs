@@ -3,6 +3,8 @@ use rand_chacha::ChaCha20Rng;
 
 use spiral_rs::discrete_gaussian::*;
 
+use crate::seed::generate_secure_random_seed;
+
 use super::convolution::negacyclic_matrix_u32;
 
 #[derive(Clone, Debug)]
@@ -37,9 +39,18 @@ pub struct LWEClient {
     sk: Vec<u32>,
 }
 
+// "lwe"
+pub const LWE_STREAM: u64 = 0x65776c;
+
 impl LWEClient {
     pub fn new(lwe_params: LWEParams) -> Self {
-        let mut rng = ChaCha20Rng::from_entropy();
+        let client_seed = generate_secure_random_seed();
+        Self::from_seed(lwe_params, client_seed)
+    }
+
+    pub fn from_seed(lwe_params: LWEParams, client_seed: [u8; 32]) -> Self {
+        let mut rng = ChaCha20Rng::from_seed(client_seed);
+        rng.set_stream(LWE_STREAM);
         let dg = DiscreteGaussian::init(lwe_params.noise_width);
         let sk = (0..lwe_params.n)
             .map(|_| dg.sample(lwe_params.modulus, &mut rng) as u32)

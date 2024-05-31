@@ -9,9 +9,10 @@ pub mod measurement;
 pub mod modulus_switch;
 pub mod noise_analysis;
 pub mod params;
+pub mod seed;
+pub mod serialize;
 pub mod transpose;
 pub mod util;
-pub mod serialize;
 
 #[cfg(feature = "server")]
 pub mod kernel;
