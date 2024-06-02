@@ -165,22 +165,6 @@ pub struct YServer<'a, T> {
     ypir_params: YPIRParams,
 }
 
-pub trait DbRowsPadded {
-    fn db_rows(&self) -> usize;
-    fn db_rows_padded(&self) -> usize;
-}
-
-impl DbRowsPadded for Params {
-    fn db_rows(&self) -> usize {
-        let db_rows = 1 << (self.db_dim_1 + self.poly_len_log2);
-        db_rows
-    }
-    fn db_rows_padded(&self) -> usize {
-        let db_rows = 1 << (self.db_dim_1 + self.poly_len_log2);
-        db_rows
-    }
-}
-
 impl<'a, T> YServer<'a, T>
 where
     T: Sized + Copy + ToU64 + Default,
@@ -583,7 +567,7 @@ where
     pub fn perform_offline_precomputation_simplepir(
         &self,
         measurement: Option<&mut Measurement>,
-    ) -> OfflinePrecomputedValues {
+    ) -> OfflinePrecomputedValues<'a> {
         // Set up some parameters
 
         let params = self.params;
@@ -814,7 +798,7 @@ where
         // Begin online computation
 
         let first_pass = Instant::now();
-        debug!("Performing mul...");
+        // debug!("Performing mul...");
         let mut intermediate = AlignedMemory64::new(db_cols);
         fast_batched_dot_product_avx512::<1, T>(
             &params,
@@ -825,7 +809,7 @@ where
             db_rows,
             db_cols,
         );
-        debug!("Done w mul...");
+        // debug!("Done w mul...");
         let first_pass_time_ms = first_pass.elapsed().as_millis();
         if let Some(ref mut m) = measurement {
             m.online.first_pass_time_ms = first_pass_time_ms as usize;
@@ -844,7 +828,7 @@ where
             &pack_pub_params_row_1s_pms,
             &y_constants,
         );
-        debug!("Packed...");
+        // debug!("Packed...");
         if let Some(m) = measurement {
             m.online.ring_packing_time_ms = ring_packing.elapsed().as_millis() as usize;
         }
@@ -1162,7 +1146,7 @@ where
 
     pub fn perform_full_online_computation_simplepir(
         &self,
-        offline_vals: &mut OfflinePrecomputedValues<'a>,
+        offline_vals: &OfflinePrecomputedValues<'a>,
         query: &[u8],
     ) -> Vec<u8> {
         let first_dim_bytes_sz = self.params.db_rows() * std::mem::size_of::<u64>();

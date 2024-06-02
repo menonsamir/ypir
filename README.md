@@ -9,7 +9,7 @@ This is joint work with [David Wu](https://www.cs.utexas.edu/~dwu4/).
 To build and run this code:
 1. Ensure you are running on Ubuntu, and that AVX-512 is available on the CPU (you can run `lscpu` and look for the `avx512f` flag).
 Our benchmarks were collected using the AWS `r6i.16xlarge` instance type, which has all necessary CPU features.
-2. Run `sudo apt-get update && sudo apt-get install -y build-essential`.
+2. Run `sudo apt-get update && sudo apt-get install -y build-essential libssl-dev pkg-config`.
 2. [Install Rust using rustup](https://www.rust-lang.org/tools/install) using `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`.
   - Select `1) Proceed with installation (default)` when prompted
   - After installation, configure the current shell as instructed by running `source "$HOME/.cargo/env"`

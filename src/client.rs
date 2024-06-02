@@ -1,6 +1,5 @@
 use log::debug;
-use rand::rngs::OsRng;
-use rand::{CryptoRng, Rng, RngCore, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use spiral_rs::aligned_memory::AlignedMemory64;
@@ -12,10 +11,9 @@ use crate::bits::{read_bits, u64s_to_contiguous_bytes};
 use crate::measurement::get_vec_pm_size_bytes;
 use crate::modulus_switch::ModulusSwitch;
 use crate::packing::condense_matrix;
-use crate::params::{params_for_scenario, params_for_scenario_simplepir, GetQPrime, GetRho};
+use crate::params::*;
 use crate::seed::{generate_secure_random_seed, Seed};
 use crate::serialize::pack_vec_pm;
-use crate::server::DbRowsPadded;
 
 use super::convolution::negacyclic_matrix_u32;
 use super::{constants::*, lwe::*, noise_analysis::measure_noise_width_squared, util::*};
@@ -554,7 +552,8 @@ impl YPIRClient {
         (query, client_seed)
     }
 
-    pub fn generate_query_simplepir(&self, target_idx: usize) -> (YPIRSimpleQuery, Seed) {
+    pub fn generate_query_simplepir(&self, target_row: usize) -> (YPIRSimpleQuery, Seed) {
+        let target_idx = target_row * self.params.db_cols_simplepir();
         let client_seed = generate_secure_random_seed();
         let mut client = Client::init(&self.params);
         client.generate_secret_keys_from_seed(client_seed);
@@ -678,10 +677,6 @@ impl YPIRClient {
             .chunks_exact(response_data.len() / num_rlwe_outputs)
             .map(|chunk| chunk.to_vec())
             .collect::<Vec<_>>();
-
-        for i in 0..response_vecs.len() {
-            println!("response_vecs[{}].len(): {}", i, response_vecs[i].len());
-        }
 
         // rescale
         let rlwe_q_prime_1 = params.get_q_prime_1();

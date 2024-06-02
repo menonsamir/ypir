@@ -1,20 +1,14 @@
 use std::time::Instant;
 
 use log::debug;
-use rand::{thread_rng, Rng, SeedableRng};
-use rand_chacha::ChaCha20Rng;
+use rand::{thread_rng, Rng};
 
 use spiral_rs::aligned_memory::AlignedMemory64;
-use spiral_rs::arith::rescale;
-use spiral_rs::poly::{PolyMatrix, PolyMatrixRaw};
 use spiral_rs::{client::*, params::*};
 
-use crate::bits::{read_bits, u64s_to_contiguous_bytes};
-use crate::modulus_switch::ModulusSwitch;
 use crate::noise_analysis::YPIRSchemeParams;
-use crate::packing::condense_matrix;
 
-use super::{client::*, constants::*, lwe::LWEParams, measurement::*, params::*, server::*};
+use super::{client::*, lwe::LWEParams, measurement::*, params::*, server::*};
 
 pub fn run_ypir_batched(
     num_items: usize,
@@ -73,15 +67,6 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
 
     let mut rng = thread_rng();
 
-    // RLWE reduced moduli
-    let rlwe_q_prime_1 = params.get_q_prime_1();
-    let rlwe_q_prime_2 = params.get_q_prime_2();
-
-    // The number of bits represented by a plaintext RLWE coefficient
-    // let pt_bits = (params.pt_modulus as f64).log2().floor() as usize;
-
-    let num_rlwe_outputs = db_cols / params.poly_len;
-
     // --
 
     let now = Instant::now();
@@ -137,31 +122,6 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
             let start = Instant::now();
             client.generate_secret_keys();
 
-            // let sk_reg = &client.get_sk_reg();
-            // let pack_pub_params = raw_generate_expansion_params(
-            //     &params,
-            //     &sk_reg,
-            //     params.poly_len_log2,
-            //     params.t_exp_left,
-            //     &mut ChaCha20Rng::from_entropy(),
-            //     &mut ChaCha20Rng::from_seed(STATIC_SEED_2),
-            // );
-            // // let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params) / 2;
-            // let mut pack_pub_params_row_1s = pack_pub_params.to_vec();
-            // for i in 0..pack_pub_params.len() {
-            //     pack_pub_params_row_1s[i] =
-            //         pack_pub_params[i].submatrix(1, 0, 1, pack_pub_params[i].cols);
-            //     pack_pub_params_row_1s[i] = condense_matrix(&params, &pack_pub_params_row_1s[i]);
-            // }
-            // let pub_params_size = get_vec_pm_size_bytes(&pack_pub_params_row_1s);
-            // debug!("pub params size: {} bytes", pub_params_size);
-
-            // let y_client = YClient::new(client, &params);
-            // let query_row = y_client.generate_query(SEED_0, params.db_dim_1, true, target_row);
-            // assert_eq!(query_row.len(), (params.poly_len + 1) * db_rows);
-            // let query_row_last_row: &[u64] = &query_row[params.poly_len * db_rows..];
-            // assert_eq!(query_row_last_row.len(), db_rows);
-            // let packed_query_row = pack_query(&params, query_row_last_row);
             let y_client = YClient::new(client, &params);
             let (packed_query_row, pack_pub_params_row_1s) =
                 y_client.generate_full_query_simplepir(target_idx);

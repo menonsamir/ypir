@@ -217,3 +217,40 @@ impl GetNumDbItems for Params {
         }
     }
 }
+
+pub trait PtModulusBits {
+    fn pt_modulus_bits(&self) -> usize;
+}
+
+impl PtModulusBits for Params {
+    fn pt_modulus_bits(&self) -> usize {
+        (self.pt_modulus as f64).log2().ceil() as usize
+    }
+}
+
+pub trait DbRowsCols {
+    fn db_rows(&self) -> usize;
+    fn db_rows_padded(&self) -> usize;
+    fn db_cols_normal(&self) -> usize;
+    fn db_cols_simplepir(&self) -> usize;
+}
+
+impl DbRowsCols for Params {
+    fn db_rows(&self) -> usize {
+        let db_rows = 1 << (self.db_dim_1 + self.poly_len_log2);
+        db_rows
+    }
+    fn db_rows_padded(&self) -> usize {
+        let db_rows = 1 << (self.db_dim_1 + self.poly_len_log2);
+        db_rows
+    }
+
+    fn db_cols_normal(&self) -> usize {
+        let db_cols = 1 << (self.db_dim_2 + self.poly_len_log2);
+        db_cols
+    }
+
+    fn db_cols_simplepir(&self) -> usize {
+        self.instances * self.poly_len
+    }
+}

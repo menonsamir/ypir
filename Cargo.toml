@@ -7,8 +7,10 @@ edition = "2021"
 cc = "1.0"
 
 [features]
-default = ["server"]
+default = ["server", "http_server", "http_client"]
 server = []
+http_server = ["actix-web", "actix-http", "futures", "bzip2", "base64"]
+http_client = ["reqwest"]
 
 [dependencies]
 # spiral-rs = { git = "https://github.com/menonsamir/spiral-rs.git", rev = "6929441" }
@@ -22,6 +24,14 @@ log = "0.4.20"
 env_logger = "0.11.1"
 clap = { version = "4.5.0", features = ["derive"] }
 test-log = "0.2.14"
+
+actix-web = { optional = true, version = "4", default_features = false, features = ["macros", "compress-gzip"] }
+actix-http = { optional = true, version = "3.7.0" }
+futures = { optional = true, version = "0.3" }
+bzip2 = { optional = true, version = "0.4.4" }
+base64 = { optional = true, version = "0.22.1" }
+reqwest = { optional = true, version = "0.12", features = ["blocking"] }
+
 
 # [profile.release]
 # lto = "fat"
