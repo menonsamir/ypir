@@ -4,7 +4,7 @@ use log::debug;
 
 use spiral_rs::{arith::*, gadget::*, ntt::*, params::*, poly::*};
 
-use crate::server::Precomp;
+use crate::{serialize::*, server::Precomp};
 
 use super::{kernel::*, util::*};
 
@@ -726,35 +726,6 @@ pub fn fast_multiply_no_reduce(
             _mm512_store_si512(p_z as *mut _, sum_hi);
         }
     }
-}
-
-pub fn condense_matrix<'a>(params: &'a Params, a: &PolyMatrixNTT<'a>) -> PolyMatrixNTT<'a> {
-    let mut res = PolyMatrixNTT::zero(params, a.rows, a.cols);
-    for i in 0..a.rows {
-        for j in 0..a.cols {
-            let res_poly = &mut res.get_poly_mut(i, j);
-            let a_poly = a.get_poly(i, j);
-            for z in 0..params.poly_len {
-                res_poly[z] = a_poly[z] | (a_poly[z + params.poly_len] << 32);
-            }
-        }
-    }
-    res
-}
-
-pub fn uncondense_matrix<'a>(params: &'a Params, a: &PolyMatrixNTT<'a>) -> PolyMatrixNTT<'a> {
-    let mut res = PolyMatrixNTT::zero(params, a.rows, a.cols);
-    for i in 0..a.rows {
-        for j in 0..a.cols {
-            let res_poly = &mut res.get_poly_mut(i, j);
-            let a_poly = a.get_poly(i, j);
-            for z in 0..params.poly_len {
-                res_poly[z] = a_poly[z] & ((1u64 << 32) - 1);
-                res_poly[z + params.poly_len] = a_poly[z] >> 32;
-            }
-        }
-    }
-    res
 }
 
 pub fn multiply_add_poly_avx(_params: &Params, res: &mut [u64], a: &[u64], b: &[u64]) {

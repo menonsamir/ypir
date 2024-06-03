@@ -1,1 +1,4 @@
 /target
+data.json
+script.py
+*.bin

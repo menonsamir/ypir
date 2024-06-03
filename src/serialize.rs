@@ -161,6 +161,35 @@ pub fn unpack_vec_pm<'a>(
     v_cts
 }
 
+pub fn condense_matrix<'a>(params: &'a Params, a: &PolyMatrixNTT<'a>) -> PolyMatrixNTT<'a> {
+    let mut res = PolyMatrixNTT::zero(params, a.rows, a.cols);
+    for i in 0..a.rows {
+        for j in 0..a.cols {
+            let res_poly = &mut res.get_poly_mut(i, j);
+            let a_poly = a.get_poly(i, j);
+            for z in 0..params.poly_len {
+                res_poly[z] = a_poly[z] | (a_poly[z + params.poly_len] << 32);
+            }
+        }
+    }
+    res
+}
+
+pub fn uncondense_matrix<'a>(params: &'a Params, a: &PolyMatrixNTT<'a>) -> PolyMatrixNTT<'a> {
+    let mut res = PolyMatrixNTT::zero(params, a.rows, a.cols);
+    for i in 0..a.rows {
+        for j in 0..a.cols {
+            let res_poly = &mut res.get_poly_mut(i, j);
+            let a_poly = a.get_poly(i, j);
+            for z in 0..params.poly_len {
+                res_poly[z] = a_poly[z] & ((1u64 << 32) - 1);
+                res_poly[z + params.poly_len] = a_poly[z] >> 32;
+            }
+        }
+    }
+    res
+}
+
 pub struct FilePtIter<R: Read + Seek> {
     file: R,
     pt_bits: usize,
@@ -264,7 +293,6 @@ mod test {
 
     use crate::{
         bits::u64s_to_contiguous_bytes,
-        packing::uncondense_matrix,
         params::{params_for_scenario, params_for_scenario_simplepir, DbRowsCols, PtModulusBits},
         server::{ToU64, YServer},
     };

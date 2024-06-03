@@ -1,13 +1,9 @@
 use clap::Parser;
 use reqwest::blocking::Client;
-use spiral_rs::params::*;
 use std::error::Error;
-use ypir::bits::u64s_to_contiguous_bytes;
 use ypir::client::YPIRClient;
 use ypir::params::*;
-use ypir::scheme::*;
 use ypir::serialize::ToBytes;
-use ypir::server::*;
 
 /// Run the YPIR server with the given parameters
 #[derive(Parser, Debug)]
@@ -65,12 +61,10 @@ fn main() {
         make_http_request(&format!("http://localhost:{}/query", port), query_bytes).unwrap();
     let result = client.decode_response_simplepir(client_seed, &response_data);
 
-    let result_bytes = u64s_to_contiguous_bytes(&result, client.params().pt_modulus_bits());
-
     println!(
         "Result: {:?}..{:?}",
-        &result_bytes[..32],
-        &result_bytes[result_bytes.len() - 32..]
+        &result[..32],
+        &result[result.len() - 32..]
     );
 }
 

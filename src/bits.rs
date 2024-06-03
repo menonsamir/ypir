@@ -82,7 +82,7 @@ pub fn read_bits(data: &[u8], bit_offs: usize, num_bits: usize) -> u64 {
 }
 
 pub fn u64s_to_contiguous_bytes(data: &[u64], inp_mod_bits: usize) -> Vec<u8> {
-    let total_sz = ((data.len() * inp_mod_bits) as f64 / 8.0).ceil() as usize;
+    let total_sz = ((data.len() as f64 * inp_mod_bits as f64) / 8.0).ceil() as usize;
     let mut out = vec![0u8; total_sz];
     let mut bit_offs = 0;
     for i in 0..data.len() {

@@ -10,10 +10,9 @@ use spiral_rs::{
 use crate::bits::{read_bits, u64s_to_contiguous_bytes};
 use crate::measurement::get_vec_pm_size_bytes;
 use crate::modulus_switch::ModulusSwitch;
-use crate::packing::condense_matrix;
 use crate::params::*;
 use crate::seed::{generate_secure_random_seed, Seed};
-use crate::serialize::pack_vec_pm;
+use crate::serialize::*;
 
 use super::convolution::negacyclic_matrix_u32;
 use super::{constants::*, lwe::*, noise_analysis::measure_noise_width_squared, util::*};
@@ -553,6 +552,7 @@ impl YPIRClient {
     }
 
     pub fn generate_query_simplepir(&self, target_row: usize) -> (YPIRSimpleQuery, Seed) {
+        assert!(target_row < self.params.db_rows());
         let target_idx = target_row * self.params.db_cols_simplepir();
         let client_seed = generate_secure_random_seed();
         let mut client = Client::init(&self.params);
@@ -571,13 +571,14 @@ impl YPIRClient {
         out
     }
 
-    pub fn decode_response_simplepir(&self, client_seed: Seed, response_data: &[u8]) -> Vec<u64> {
+    pub fn decode_response_simplepir(&self, client_seed: Seed, response_data: &[u8]) -> Vec<u8> {
         let mut client = Client::init(&self.params);
         client.generate_secret_keys_from_seed(client_seed);
         let y_client = YClient::from_seed(&mut client, &self.params, client_seed);
-        let out =
+        let decoded =
             YPIRClient::decode_response_simplepir_yclient(&self.params, &y_client, response_data);
-        out
+        let decoded_bytes = u64s_to_contiguous_bytes(&decoded, self.params.pt_modulus_bits());
+        decoded_bytes
     }
 
     pub fn decode_response_normal_yclient(

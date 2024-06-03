@@ -142,6 +142,15 @@ pub fn test_params() -> Params {
     params
 }
 
+pub fn qt_hash(data: &[u64]) -> u64 {
+    let mut hash = 0u64;
+    for d in data {
+        hash = hash.wrapping_add(*d);
+        hash = hash.wrapping_mul(0x9e3779b97f4a7c15);
+    }
+    hash
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

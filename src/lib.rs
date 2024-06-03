@@ -24,3 +24,6 @@ pub mod packing;
 pub mod scheme;
 #[cfg(feature = "server")]
 pub mod server;
+
+#[cfg(feature = "test_data")]
+pub mod data;

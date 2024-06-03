@@ -1,6 +1,6 @@
-use std::fs::File;
 use std::time::Instant;
 
+use actix_cors::Cors;
 use actix_web::HttpServer;
 use actix_web::{get, post, web, App};
 use clap::Parser;
@@ -51,10 +51,10 @@ async fn query(
     body: web::Bytes,
     data: web::Data<ServerState>,
 ) -> Result<Vec<u8>, actix_web::error::Error> {
-    let query_bytes = body.to_vec();
+    let req_body = body.to_vec();
     let response = data
         .server
-        .perform_full_online_computation_simplepir(&data.offline_values, &query_bytes);
+        .perform_full_online_computation_simplepir(&data.offline_values, &req_body);
     Ok(response)
 }
 
@@ -160,6 +160,7 @@ async fn main() -> std::io::Result<()> {
     println!("Listening on http://127.0.0.1:{}", port);
     HttpServer::new(move || {
         App::new()
+            .wrap(Cors::permissive())
             .app_data(Data::new(state.clone()))
             .app_data(web::PayloadConfig::new(1usize << 32))
             .service(index)

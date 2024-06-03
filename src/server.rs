@@ -10,7 +10,7 @@ use spiral_rs::aligned_memory::AlignedMemory64;
 use spiral_rs::{arith::*, client::*, params::*, poly::*};
 
 use crate::measurement::Measurement;
-use crate::serialize::{unpack_vec_pm, FromBytes};
+use crate::serialize::{uncondense_matrix, unpack_vec_pm, FromBytes};
 
 use super::{
     bits::*,

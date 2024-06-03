@@ -493,7 +493,7 @@ fn std_dev(xs: &[usize]) -> f64 {
 
 #[cfg(test)]
 mod test {
-    use crate::serialize::ToBytes;
+    use crate::{bits::u64s_to_contiguous_bytes, serialize::ToBytes};
 
     use super::*;
     use test_log::test;
@@ -536,22 +536,23 @@ mod test {
         let y_server = YServer::<u16>::new(&params, pt_iter, true, false, true);
         let mut offline_values = y_server.perform_offline_precomputation_simplepir(None);
 
-        let target_idx = fastrand::usize(..params.num_db_items(true));
+        let target_row = fastrand::usize(..params.db_rows());
 
         let client = YPIRClient::from_db_sz(1 << 14, 16384 * 8, true);
-        let (query, client_seed) = client.generate_query_simplepir(target_idx);
+        let (query, client_seed) = client.generate_query_simplepir(target_row);
         let query_bytes = query.to_bytes();
         let response =
             y_server.perform_full_online_computation_simplepir(&mut offline_values, &query_bytes);
 
         let decoded = client.decode_response_simplepir(client_seed, &response);
         let corr_result = y_server
-            .get_row(target_idx / (params.instances * params.poly_len))
+            .get_row(target_row)
             .iter()
             .map(|x| x.to_u64())
             .collect::<Vec<_>>();
+        let corr_result_bytes = u64s_to_contiguous_bytes(&corr_result, params.pt_modulus_bits());
 
-        assert_eq!(decoded, corr_result);
+        assert_eq!(decoded, corr_result_bytes);
     }
 
     #[test]
@@ -616,5 +617,18 @@ mod test {
     #[ignore]
     fn test_batched_4_ypir() {
         run_ypir_batched(1 << 30, 1, 4, false, 5);
+    }
+
+    #[cfg(feature = "test_data")]
+    #[test]
+    #[ignore]
+    fn test_with_test_data() {
+        use crate::data::{RESP1, SEED1};
+
+        let client = YPIRClient::from_db_sz(1 << 14, 16384 * 8, true);
+        let decoded = client.decode_response_simplepir(SEED1, RESP1);
+        println!("raw:  {:?}", &decoded[..32]);
+        let bytes = u64s_to_contiguous_bytes(&decoded, client.params().pt_modulus_bits());
+        println!("as u8: {:?}", &bytes[..32]);
     }
 }
