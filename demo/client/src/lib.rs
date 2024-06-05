@@ -19,8 +19,8 @@ use ypir::{
 
 fn get_db_conf() -> (u64, u64, bool) {
     // TODO: don't hardcode this
-    let num_items = 1u64 << 14;
-    let bits_per_item = 16384u64 * 8;
+    let num_items = 1u64 << 18;
+    let bits_per_item = 73728u64 * 8;
     let is_simplepir = true;
     (num_items, bits_per_item, is_simplepir)
 }
@@ -92,13 +92,20 @@ pub fn generate_query(desired_index: usize) -> Result<JsValue, JsValue> {
     let (num_items, bits_per_item, is_simplepir) = get_db_conf();
     let client = YPIRClient::from_db_sz(num_items, bits_per_item, is_simplepir);
     let (query, seed) = client.generate_query_simplepir(desired_index as usize);
-    web_sys::console::log_1(&JsValue::from_str(&format!("seed {:?}", seed)));
     let query_bytes = query.to_bytes();
-    assert_eq!(query_bytes.len(), 671744);
     Ok(serde_wasm_bindgen::to_value(&QueryAndSeed {
         query: query_bytes,
         seed: seed.to_vec(),
     })?)
+}
+
+#[wasm_bindgen(js_name = generateQueryToCheckItemInclusion)]
+pub fn generate_query_to_check_item_inclusion(target_item: &str) -> Result<JsValue, JsValue> {
+    let (num_items, _, is_simplepir) = get_db_conf();
+    assert!(is_simplepir);
+    let log2_num_items = num_items.trailing_zeros() as usize;
+    let bucket = YPIRClient::bucket(log2_num_items, target_item);
+    generate_query(bucket)
 }
 
 #[wasm_bindgen(js_name = decodeResponse)]
@@ -126,6 +133,32 @@ pub fn decode_response(response: &[u8], seed: &[u8]) -> Vec<u8> {
         &decoded[..64]
     )));
     decoded
+}
+
+#[wasm_bindgen(js_name = decodeResponseToInclusionQuery)]
+pub fn decode_response_to_inclusion_query(response: &[u8], seed: &[u8], target_item: &str) -> bool {
+    let result = decode_response(response, seed);
+
+    let (num_items, _, is_simplepir) = get_db_conf();
+    assert!(is_simplepir);
+    let log2_num_items = num_items.trailing_zeros() as usize;
+
+    // search decoded for target_item hash
+    // top floor(log2(num_items) / 8) bytes of each hash in result are omitted
+    let item_hash = YPIRClient::hash(target_item);
+    let omitted_bytes = log2_num_items / 8;
+    let hash_bytes = SHA1_HASH_BYTES - omitted_bytes;
+    let looking_for = &item_hash[omitted_bytes..];
+
+    let mut found = false;
+    for chunk in result.chunks_exact(hash_bytes) {
+        if chunk == looking_for {
+            found = true;
+            break;
+        }
+    }
+
+    found
 }
 
 #[wasm_bindgen(start)]

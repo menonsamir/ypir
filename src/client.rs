@@ -2,6 +2,7 @@ use log::debug;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
+use sha1::{Digest, Sha1};
 use spiral_rs::aligned_memory::AlignedMemory64;
 use spiral_rs::{
     arith::*, client::*, discrete_gaussian::*, gadget::*, number_theory::*, params::*, poly::*,
@@ -351,6 +352,69 @@ impl<'a> YClient<'a> {
         }
     }
 
+    pub fn generate_query_lwe_low_mem(
+        &self,
+        public_seed_idx: u8,
+        dim_log2: usize,
+        packing: bool,
+        index_row: usize,
+    ) -> Vec<u64> {
+        let index = index_row;
+        let multiply_ct = true;
+        let mut rng_pub = ChaCha20Rng::from_seed(get_seed(public_seed_idx));
+
+        // Generate dim1_bits LWE samples under public randomness
+        let mut out = Vec::new();
+
+        let scale_k = self.params.modulus / self.params.pt_modulus;
+
+        for i in 0..(1 << dim_log2) {
+            let mut scalar = PolyMatrixRaw::zero(self.params, 1, 1);
+            let is_nonzero = i == (index / self.params.poly_len);
+
+            if is_nonzero {
+                scalar.data[index % self.params.poly_len] = scale_k;
+            }
+
+            if packing {
+                let factor =
+                    invert_uint_mod(self.params.poly_len as u64, self.params.modulus).unwrap();
+                scalar = scalar_multiply_alloc(
+                    &PolyMatrixRaw::single_value(self.params, factor).ntt(),
+                    &scalar.ntt(),
+                )
+                .raw();
+            }
+
+            let ct = if multiply_ct {
+                let factor =
+                    invert_uint_mod(self.params.poly_len as u64, self.params.modulus).unwrap();
+
+                self.inner.encrypt_matrix_scaled_reg(
+                    &scalar.ntt(),
+                    &mut ChaCha20Rng::from_entropy(),
+                    &mut rng_pub,
+                    factor,
+                )
+            } else {
+                self.inner.encrypt_matrix_reg(
+                    &scalar.ntt(),
+                    &mut ChaCha20Rng::from_entropy(),
+                    &mut rng_pub,
+                )
+            };
+
+            let ct_raw = ct.raw();
+
+            // only care about the last row
+            let as_lwe = self.rlwes_to_lwes(&[ct_raw]);
+            let lwe_last_row = &as_lwe[self.params.poly_len * self.params.poly_len..];
+
+            out.extend_from_slice(lwe_last_row);
+        }
+        out
+    }
+
     pub fn generate_full_query(
         &self,
         target_idx: usize,
@@ -475,11 +539,15 @@ impl<'a> YClient<'a> {
         );
 
         // generate query
-        let query_row = self.generate_query(SEED_0, self.params.db_dim_1, true, target_row);
-        assert_eq!(query_row.len(), (self.params.poly_len + 1) * db_rows);
-        let query_row_last_row: &[u64] = &query_row[self.params.poly_len * db_rows..];
+        // NB: made this low memory
+        // let query_row = self.generate_query(SEED_0, self.params.db_dim_1, true, target_row);
+        // assert_eq!(query_row.len(), (self.params.poly_len + 1) * db_rows);
+        // let query_row_last_row: &[u64] = &query_row[self.params.poly_len * db_rows..];
+        // assert_eq!(query_row_last_row.len(), db_rows);
+        let query_row_last_row =
+            self.generate_query_lwe_low_mem(SEED_0, self.params.db_dim_1, true, target_row);
         assert_eq!(query_row_last_row.len(), db_rows);
-        let packed_query_row = pack_query(self.params, query_row_last_row);
+        let packed_query_row = pack_query(self.params, &query_row_last_row);
         assert_eq!(packed_query_row.len(), self.params.db_rows());
 
         (packed_query_row, pack_pub_params_row_1s_pm)
@@ -526,11 +594,28 @@ pub struct YPIRClient {
 pub type YPIRQuery = (Vec<u32>, AlignedMemory64, AlignedMemory64);
 pub type YPIRSimpleQuery = (AlignedMemory64, AlignedMemory64);
 
+pub const SHA1_HASH_BYTES: usize = 20;
+
 impl YPIRClient {
     pub fn new(params: &Params) -> Self {
         Self {
             params: params.clone(),
         }
+    }
+
+    pub fn hash(target_item: &str) -> [u8; SHA1_HASH_BYTES] {
+        let mut hasher = Sha1::new();
+        hasher.update(target_item.as_bytes());
+        let item_hash = hasher.finalize();
+        item_hash.into()
+    }
+
+    pub fn bucket(log2_num_items: usize, target_item: &str) -> usize {
+        let item_hash = Self::hash(target_item);
+
+        let top_idx = u32::from_be_bytes(item_hash[0..4].try_into().unwrap());
+        let bucket = top_idx >> (32 - log2_num_items);
+        bucket as usize
     }
 
     pub fn from_db_sz(num_items: u64, item_size_bits: u64, is_simplepir: bool) -> Self {

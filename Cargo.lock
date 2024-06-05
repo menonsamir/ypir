@@ -2207,6 +2207,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha1",
  "spiral-rs",
  "test-log",
 ]

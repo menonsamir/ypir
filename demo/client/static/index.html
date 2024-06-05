@@ -3,37 +3,61 @@
 
 <head>
   <meta charset="utf-8" />
-  <title>hello-wasm example</title>
+  <title>Password checking with YPIR</title>
+  <style>
+    .bad {
+      color: red;
+      font-weight: bold;
+    }
+
+    .good {
+      color: green;
+    }
+
+    .message {
+      font-style: italic;
+    }
+  </style>
 </head>
 
 <body>
-  <input type="text" id="index" />
-  <button id="submit">&gt;</button>
-
-  <pre id="output"></pre>
+  <input type="text" id="password" />
+  <button type="button" id="submit">&gt;</button>
+  <br />
+  <p id="output" class="message"></p>
 
   <script type="module">
-    import { init, generateQuery, decodeResponse, postRequest } from "../js/index.js";
+    import { init, generateQueryToCheckItemInclusion, decodeResponseToInclusionQuery, postRequest } from "../js/index.js";
     function performQuery() {
-      let { query, seed } = generateQuery(17);
-      console.log(query);
-      console.log(query.length);
-      console.log(new Uint8Array(query));
-      console.log(seed);
-      postRequest("http://localhost:8989/query", query).then(response => {
-        console.log(response);
-        let decoded = decodeResponse(response, new Uint8Array(seed));
-        console.log(decoded);
-      });
+      const output = document.getElementById("output");
+      const password = document.getElementById("password");
+      const submit = document.getElementById("submit");
 
-      const query = generateQuery(document.getElementById("index").value);
-      postRequest(query).then((response) => {
-        document.getElementById("output").innerText = decodeResponse(response);
-      });
+      submit.disabled = true;
+      submit.innerText = "...";
+      setTimeout(() => {
+        const targetItem = password.value;
+        const { query, seed } = generateQueryToCheckItemInclusion(targetItem);
+        postRequest("http://localhost:8989/query", query).then((response) => {
+          const found = decodeResponseToInclusionQuery(response, seed, targetItem);
+          output.innerText =
+            found ? "Password found in prior breach!" : "Password not found in the HIBP database of ~1B breached credentials.";
+          output.classList.remove("good", "bad");
+          output.classList.add(found ? "bad" : "good");
+          submit.disabled = false;
+          submit.innerText = ">";
+        });
+      }, 1);
     }
     init().then(() => {
-
-
+      const password = document.getElementById("password");
+      const submit = document.getElementById("submit");
+      submit.addEventListener("click", performQuery);
+      password.onkeydown = function (e) {
+        if (e.keyCode == 13 && !submit.disabled) {
+          performQuery();
+        }
+      };
     });
   </script>
 </body>

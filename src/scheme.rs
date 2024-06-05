@@ -91,7 +91,7 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
 
     let start_offline_comp = Instant::now();
     let offline_values =
-        y_server.perform_offline_precomputation_simplepir(Some(&mut measurements[0]));
+        y_server.perform_offline_precomputation_simplepir(Some(&mut measurements[0]), None, None);
     let offline_server_time_ms = start_offline_comp.elapsed().as_millis();
 
     let packed_query_row_sz = params.db_rows_padded();
@@ -534,7 +534,7 @@ mod test {
         let params = params_for_scenario_simplepir(1 << 14, 16384 * 8);
         let pt_iter = std::iter::repeat_with(|| (u16::sample() as u64 % params.pt_modulus) as u16);
         let y_server = YServer::<u16>::new(&params, pt_iter, true, false, true);
-        let mut offline_values = y_server.perform_offline_precomputation_simplepir(None);
+        let mut offline_values = y_server.perform_offline_precomputation_simplepir(None, None, None);
 
         let target_row = fastrand::usize(..params.db_rows());
 

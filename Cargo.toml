@@ -33,6 +33,7 @@ futures = { optional = true, version = "0.3" }
 bzip2 = { optional = true, version = "0.4.4" }
 base64 = { optional = true, version = "0.22.1" }
 reqwest = { optional = true, version = "0.12", features = ["blocking"] }
+sha1 = { version = "0.10.6" }
 
 
 # [profile.release]
