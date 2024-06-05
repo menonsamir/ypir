@@ -1,4 +1,4 @@
-use std::{arch::x86_64::*, time::Instant};
+use std::time::Instant;
 
 use log::debug;
 
@@ -7,6 +7,9 @@ use spiral_rs::{arith::*, gadget::*, ntt::*, params::*, poly::*};
 use crate::{serialize::*, server::Precomp};
 
 use super::{kernel::*, util::*};
+
+#[cfg(feature = "explicit_avx512")]
+use std::arch::x86_64::*;
 
 fn homomorphic_automorph<'a>(
     params: &'a Params,
@@ -678,6 +681,7 @@ pub fn fast_add_into(res: &mut PolyMatrixNTT, a: &PolyMatrixNTT) {
     }
 }
 
+#[cfg(feature = "explicit_avx512")]
 pub fn fast_multiply_no_reduce(
     params: &Params,
     res: &mut PolyMatrixNTT,
@@ -728,6 +732,58 @@ pub fn fast_multiply_no_reduce(
     }
 }
 
+#[cfg(not(feature = "explicit_avx512"))]
+pub fn fast_multiply_no_reduce(
+    params: &Params,
+    res: &mut PolyMatrixNTT,
+    a: &PolyMatrixNTT,
+    b: &PolyMatrixNTT,
+    _start_inner_dim: usize,
+) {
+    assert_eq!(res.rows, a.rows);
+    assert_eq!(res.cols, b.cols);
+    assert_eq!(res.rows, 1);
+    assert_eq!(res.cols, 1);
+
+    assert_eq!(a.cols, b.rows);
+    assert_eq!(params.crt_count * params.poly_len, 2 * 2048);
+
+    unsafe {
+        let a_ptr = a.as_slice().as_ptr();
+        let b_ptr = b.as_slice().as_ptr();
+        let res_ptr = res.as_mut_slice().as_mut_ptr();
+        let pol_sz = params.poly_len;
+
+        for idx in 0..pol_sz {
+            let mut sum_lo = 0;
+            let mut sum_hi = 0;
+            for k in 0..a.cols {
+                let p_x = a_ptr.add(k * 2 * pol_sz + idx);
+                let p_y = b_ptr.add(k * 2 * pol_sz + idx);
+
+                let x = *p_x;
+                let x_lo = (x as u32) as u64;
+                let x_hi = x >> 32;
+                let y = *p_y;
+                let y_lo = (y as u32) as u64;
+                let y_hi = y >> 32;
+
+                let product_lo = x_lo * y_lo;
+                let product_hi = x_hi * y_hi;
+
+                sum_lo += product_lo;
+                sum_hi += product_hi;
+            }
+
+            let p_z = res_ptr.add(idx);
+            *p_z = sum_lo;
+            let p_z = res_ptr.add(pol_sz + idx);
+            *p_z = sum_hi;
+        }
+    }
+}
+
+#[cfg(feature = "explicit_avx512")]
 pub fn multiply_add_poly_avx(_params: &Params, res: &mut [u64], a: &[u64], b: &[u64]) {
     unsafe {
         let a_ptr = a.as_ptr();
@@ -750,6 +806,29 @@ pub fn multiply_add_poly_avx(_params: &Params, res: &mut [u64], a: &[u64], b: &[
     }
 }
 
+#[cfg(not(feature = "explicit_avx512"))]
+pub fn multiply_add_poly_avx(_params: &Params, res: &mut [u64], a: &[u64], b: &[u64]) {
+    unsafe {
+        let a_ptr = a.as_ptr();
+        let b_ptr = b.as_ptr();
+        let res_ptr = res.as_mut_ptr();
+
+        for i in 0..res.len() {
+            let p_x = a_ptr.add(i);
+            let p_y = b_ptr.add(i);
+            let p_z = res_ptr.add(i);
+
+            let x = ((*p_x) as u32) as u64;
+            let y = ((*p_y) as u32) as u64;
+
+            let product = x * y;
+
+            *p_z += product;
+        }
+    }
+}
+
+#[cfg(feature = "explicit_avx512")]
 pub fn multiply_poly_avx(_params: &Params, res: &mut [u64], a: &[u64], b: &[u64]) {
     unsafe {
         let a_ptr = a.as_ptr();
@@ -767,6 +846,28 @@ pub fn multiply_poly_avx(_params: &Params, res: &mut [u64], a: &[u64], b: &[u64]
             let product = _mm512_mul_epu32(x, y);
 
             _mm512_store_si512(p_z as *mut _, product);
+        }
+    }
+}
+
+#[cfg(not(feature = "explicit_avx512"))]
+pub fn multiply_poly_avx(_params: &Params, res: &mut [u64], a: &[u64], b: &[u64]) {
+    unsafe {
+        let a_ptr = a.as_ptr();
+        let b_ptr = b.as_ptr();
+        let res_ptr = res.as_mut_ptr();
+
+        for i in 0..res.len() {
+            let p_x = a_ptr.add(i);
+            let p_y = b_ptr.add(i);
+            let p_z = res_ptr.add(i);
+
+            let x = ((*p_x) as u32) as u64;
+            let y = ((*p_y) as u32) as u64;
+
+            let product = x * y;
+
+            *p_z = product;
         }
     }
 }

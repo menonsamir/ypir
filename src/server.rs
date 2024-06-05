@@ -168,7 +168,7 @@ pub struct YServer<'a, T> {
 impl<'a, T> YServer<'a, T>
 where
     T: Sized + Copy + ToU64 + Default,
-    *const T: ToM512,
+    *const T: ToM512 + ToU64,
 {
     pub fn new<'b, I>(
         params: &'a Params,
@@ -286,7 +286,7 @@ where
 
         let now = Instant::now();
         let mut result = AlignedMemory64::new(K * db_cols);
-        fast_batched_dot_product_avx512::<K, _>(
+        fast_batched_dot_product::<K, _>(
             self.params,
             result.as_mut_slice(),
             aligned_query_packed,
@@ -313,7 +313,7 @@ where
         let mut result = vec![0u32; (db_cols + 8) * K];
         let now = Instant::now();
         // let mut result = AlignedMemory64::new(K * db_cols + 8);
-        // lwe_fast_batched_dot_product_avx512::<K, _>(
+        // lwe_fast_batched_dot_product::<K, _>(
         //     self.params,
         //     result.as_mut_slice(),
         //     aligned_query_packed,
@@ -800,7 +800,7 @@ where
         let first_pass = Instant::now();
         // debug!("Performing mul...");
         let mut intermediate = AlignedMemory64::new(db_cols);
-        fast_batched_dot_product_avx512::<1, T>(
+        fast_batched_dot_product::<1, T>(
             &params,
             intermediate.as_mut_slice(),
             first_dim_queries_packed,
@@ -1241,7 +1241,7 @@ pub trait ToM512 {
     fn to_m512(self) -> __m512i;
 }
 
-#[cfg(target_feature = "avx512f")]
+#[cfg(feature = "explicit_avx512")]
 mod m512_impl {
     use super::*;
 
@@ -1267,28 +1267,28 @@ mod m512_impl {
     }
 }
 
-#[cfg(not(target_feature = "avx512f"))]
+#[cfg(not(feature = "explicit_avx512"))]
 mod m512_impl {
     use super::*;
 
     impl ToM512 for *const u8 {
         #[inline(always)]
         fn to_m512(self) -> __m512i {
-            self as __m512i
+            panic!("AVX512 implementation not being used")
         }
     }
 
     impl ToM512 for *const u16 {
         #[inline(always)]
         fn to_m512(self) -> __m512i {
-            self as __m512i
+            panic!("AVX512 implementation not being used")
         }
     }
 
     impl ToM512 for *const u32 {
         #[inline(always)]
         fn to_m512(self) -> __m512i {
-            self as __m512i
+            panic!("AVX512 implementation not being used")
         }
     }
 }
@@ -1318,6 +1318,24 @@ impl ToU64 for u32 {
 impl ToU64 for u64 {
     fn to_u64(self) -> u64 {
         self
+    }
+}
+
+impl ToU64 for *const u8 {
+    fn to_u64(self) -> u64 {
+        (unsafe { *self }) as u64
+    }
+}
+
+impl ToU64 for *const u16 {
+    fn to_u64(self) -> u64 {
+        (unsafe { *self }) as u64
+    }
+}
+
+impl ToU64 for *const u64 {
+    fn to_u64(self) -> u64 {
+        unsafe { *self }
     }
 }
 

@@ -9,6 +9,7 @@ cc = "1.0"
 [features]
 default = ["server", "http_server", "http_client"]
 server = []
+explicit_avx512 = []
 http_server = ["actix-web", "actix-http", "actix-cors", "futures", "bzip2", "base64"]
 http_client = ["reqwest"]
 

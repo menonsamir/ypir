@@ -1,12 +1,14 @@
-use std::arch::x86_64::*;
-
 use spiral_rs::{arith::*, params::*, poly::*};
 
 use crate::server::ToU64;
 
 use super::server::ToM512;
 
-pub fn fast_batched_dot_product_avx512<const K: usize, T: Copy>(
+#[cfg(feature = "explicit_avx512")]
+use std::arch::x86_64::*;
+
+#[cfg(feature = "explicit_avx512")]
+pub fn fast_batched_dot_product<const K: usize, T: Copy>(
     params: &Params,
     c: &mut [u64],
     a: &[u64],
@@ -15,7 +17,52 @@ pub fn fast_batched_dot_product_avx512<const K: usize, T: Copy>(
     b_rows: usize,
     b_cols: usize,
 ) where
-    *const T: ToM512,
+    *const T: ToM512 + ToU64,
+{
+    fast_batched_dot_product_explicit_avx512::<K, T>(params, c, a, a_elems, b_t, b_rows, b_cols)
+}
+
+#[cfg(not(feature = "explicit_avx512"))]
+pub fn fast_batched_dot_product<const K: usize, T: Copy>(
+    params: &Params,
+    c: &mut [u64],
+    a: &[u64],
+    a_elems: usize,
+    b_t: &[T], // transposed
+    b_rows: usize,
+    b_cols: usize,
+) where
+    *const T: ToM512 + ToU64,
+{
+    fast_batched_dot_product_implicit::<K, T>(params, c, a, a_elems, b_t, b_rows, b_cols)
+}
+
+#[cfg(not(feature = "explicit_avx512"))]
+pub fn fast_batched_dot_product_explicit_avx512<const K: usize, T: Copy>(
+    _params: &Params,
+    _c: &mut [u64],
+    _a: &[u64],
+    _a_elems: usize,
+    _b_t: &[T], // transposed
+    _b_rows: usize,
+    _b_cols: usize,
+) where
+    *const T: ToM512 + ToU64,
+{
+    panic!("explicit_avx512 not enabled");
+}
+
+#[cfg(feature = "explicit_avx512")]
+pub fn fast_batched_dot_product_explicit_avx512<const K: usize, T: Copy>(
+    params: &Params,
+    c: &mut [u64],
+    a: &[u64],
+    a_elems: usize,
+    b_t: &[T], // transposed
+    b_rows: usize,
+    b_cols: usize,
+) where
+    *const T: ToM512 + ToU64,
 {
     assert_eq!(a_elems, b_rows);
 
@@ -132,6 +179,168 @@ pub fn fast_batched_dot_product_avx512<const K: usize, T: Copy>(
     }
 }
 
+// pub fn fast_batched_dot_product_implicit<const K: usize, T: Copy>(
+//     params: &Params,
+//     c: &mut [u64],
+//     a: &[u64],
+//     a_elems: usize,
+//     b_t: &[T], // transposed
+//     b_rows: usize,
+//     b_cols: usize,
+// ) where
+//     *const T: ToM512 + ToU64,
+// {
+//     assert_eq!(a_elems, b_rows);
+
+//     let simd_width = 1;
+
+//     let chunk_size = (65536 / K.next_power_of_two()).min(a_elems / simd_width);
+//     let num_chunks = (a_elems / simd_width) / chunk_size;
+
+//     let j_chunk_size = 1;
+//     let j_num_chunks = b_cols / j_chunk_size;
+
+//     let res_mut_slc = c;
+
+//     let a_offs_size = a.len() / K;
+
+//     unsafe {
+//         // let a_ptr = a.as_ptr();
+//         let mut a_slcs: [&[u64]; K] = [&[]; K];
+//         for (slc_mut, chunk) in a_slcs.iter_mut().zip(a.chunks_exact(a.len() / K)) {
+//             *slc_mut = chunk;
+//         }
+//         let b_ptr = b_t.as_ptr();
+
+//         for k_outer in 0..num_chunks {
+//             for j_outer in 0..j_num_chunks {
+//                 for j_inner in 0..j_chunk_size {
+//                     let j = j_outer * j_chunk_size + j_inner;
+
+//                     let mut total_sum_lo = [0u64; K];
+//                     let mut total_sum_hi = [0u64; K];
+//                     let mut tmp = [0u64; K];
+
+//                     for k_inner in 0..chunk_size {
+//                         let k = simd_width * (k_outer * chunk_size + k_inner);
+
+//                         let a_idx = k;
+//                         let b_idx = j * b_rows + k;
+//                         let b_val_simd = b_ptr.add(b_idx).to_u64();
+
+//                         for batch in 0..K {
+//                             tmp[batch] = *(a_slcs[batch].as_ptr().add(a_idx));
+//                             // tmp[batch] = *a_ptr.add(a_offs_size * batch + a_idx);
+//                         }
+
+//                         for batch in 0..K {
+//                             let a_val_lo = tmp[batch];
+//                             let a_val_hi = tmp[batch] >> 32;
+
+//                             total_sum_lo[batch] += ((a_val_lo as u32) * (b_val_simd as u32)) as u64;
+//                             total_sum_hi[batch] += ((a_val_hi as u32) * (b_val_simd as u32)) as u64;
+//                         }
+//                     }
+
+//                     let res_mut_slcs = res_mut_slc.chunks_exact_mut(res_mut_slc.len() / K);
+//                     for (batch, res_mut_slc) in (0..K).zip(res_mut_slcs) {
+//                         let res_lo = total_sum_lo[batch];
+//                         let res_hi = total_sum_hi[batch];
+
+//                         let (lo, hi) = (
+//                             barrett_coeff_u64(params, res_lo as u64, 0),
+//                             barrett_coeff_u64(params, res_hi as u64, 1),
+//                         );
+
+//                         let res = params.crt_compose_2(lo, hi);
+//                         res_mut_slc[j] = barrett_u64(params, res_mut_slc[j] + res);
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
+
+pub fn fast_batched_dot_product_implicit<const K: usize, T: Copy>(
+    params: &Params,
+    c: &mut [u64],
+    a: &[u64],
+    a_elems: usize,
+    b_t: &[T], // transposed
+    b_rows: usize,
+    b_cols: usize,
+) where
+    *const T: ToM512 + ToU64,
+{
+    assert_eq!(a_elems, b_rows);
+    assert_eq!(K, 1);
+
+    let simd_width = 1;
+
+    let chunk_size = (65536 / K.next_power_of_two()).min(a_elems / simd_width);
+    let num_chunks = (a_elems / simd_width) / chunk_size;
+
+    let j_chunk_size = 1;
+    let j_num_chunks = b_cols / j_chunk_size;
+
+    let res_mut_slc = c;
+
+    unsafe {
+        // let a_ptr = a.as_ptr();
+        let mut a_slcs: [&[u64]; K] = [&[]; K];
+        for (slc_mut, chunk) in a_slcs.iter_mut().zip(a.chunks_exact(a.len() / K)) {
+            *slc_mut = chunk;
+        }
+        let b_ptr = b_t.as_ptr();
+
+        for k_outer in 0..num_chunks {
+            for j_outer in 0..j_num_chunks {
+                for j_inner in 0..j_chunk_size {
+                    let j = j_outer * j_chunk_size + j_inner;
+
+                    let mut total_sum_lo = [0u64; K];
+                    let mut total_sum_hi = [0u64; K];
+                    let mut tmp = [0u64; K];
+
+                    for k_inner in 0..chunk_size {
+                        let k = simd_width * (k_outer * chunk_size + k_inner);
+
+                        let a_idx = k;
+                        let b_idx = j * b_rows + k;
+                        let b_val_simd = (b_ptr.add(b_idx) as *const T).to_u64();
+
+                        for batch in 0..K {
+                            tmp[batch] = *(a_slcs[batch].as_ptr().add(a_idx));
+                        }
+
+                        for batch in 0..K {
+                            let a_val_lo = (tmp[batch] as u32) as u64;
+                            let a_val_hi = ((tmp[batch] >> 32) as u32) as u64;
+
+                            total_sum_lo[batch] += a_val_lo * b_val_simd;
+                            total_sum_hi[batch] += a_val_hi * b_val_simd;
+                        }
+                    }
+
+                    let res_mut_slcs = res_mut_slc.chunks_exact_mut(res_mut_slc.len() / K);
+                    for (batch, res_mut_slc) in (0..K).zip(res_mut_slcs) {
+                        let res_lo = total_sum_lo[batch];
+                        let res_hi = total_sum_hi[batch];
+
+                        let (lo, hi) = (
+                            barrett_coeff_u64(params, res_lo as u64, 0),
+                            barrett_coeff_u64(params, res_hi as u64, 1),
+                        );
+
+                        let res = params.crt_compose_2(lo, hi);
+                        res_mut_slc[j] = barrett_u64(params, res_mut_slc[j] + res);
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn scalar_multiply_avx(res: &mut PolyMatrixNTT, a: &PolyMatrixNTT, b: &PolyMatrixNTT) {
     assert_eq!(a.rows, 1);
     assert_eq!(a.cols, 1);
@@ -202,19 +411,18 @@ mod test {
     use crate::{transpose::*, util::*};
     use test_log::test;
 
-    #[test]
-    fn test_fast_batched_dot_product_avx512() {
+    fn test_fast_batched_dot_product(use_explicit: bool) {
         let params = test_params();
 
         const A_ROWS: usize = 1;
-        let a_cols = 32768;
+        let a_cols = 65536;
         let b_rows = a_cols;
-        let b_cols = 16384;
+        let b_cols = 32768;
 
         let a = PolyMatrixRaw::random(&params, A_ROWS, a_cols);
         let mut b = AlignedMemory64::new(b_rows * b_cols);
         let mut c = AlignedMemory64::new(A_ROWS * b_cols);
-        let trials = 1;
+        let trials = 10;
         let mut sum = 0u64;
         let mut sum_time = 0;
         for _ in 0..trials {
@@ -227,15 +435,28 @@ mod test {
             let now = Instant::now();
             // fast_dot_product_avx512(&params, a.as_slice(), rows, b_as_t_slice, rows, cols);
             // fast_dot_product_avx512_fastest(&params, a.as_slice(), rows, b_as_t_slice, rows, cols);
-            fast_batched_dot_product_avx512::<A_ROWS, _>(
-                &params,
-                c.as_mut_slice(),
-                a.as_slice(),
-                a_cols,
-                b_u16_slc,
-                b_rows,
-                b_cols,
-            );
+            if use_explicit {
+                fast_batched_dot_product_explicit_avx512::<A_ROWS, _>(
+                    &params,
+                    c.as_mut_slice(),
+                    a.as_slice(),
+                    a_cols,
+                    b_u16_slc,
+                    b_rows,
+                    b_cols,
+                );
+            } else {
+                fast_batched_dot_product_implicit::<A_ROWS, _>(
+                    &params,
+                    c.as_mut_slice(),
+                    a.as_slice(),
+                    a_cols,
+                    b_u16_slc,
+                    b_rows,
+                    b_cols,
+                );
+            }
+
             sum_time += now.elapsed().as_micros();
             sum += c.as_slice()[fastrand::usize(..c.len())];
         }
@@ -245,6 +466,19 @@ mod test {
         );
         debug!("");
         debug!("{}", sum);
+    }
+
+    #[cfg(feature = "explicit_avx512")]
+    #[test]
+    #[ignore]
+    fn test_fast_batched_dot_product_explicit() {
+        test_fast_batched_dot_product(true);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_fast_batched_dot_product_implicit() {
+        test_fast_batched_dot_product(false);
     }
 
     #[test]
