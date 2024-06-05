@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en-US">
+
+<head>
+  <meta charset="utf-8" />
+  <title>hello-wasm example</title>
+</head>
+
+<body>
+  <input type="text" id="index" />
+  <button id="submit">&gt;</button>
+
+  <pre id="output"></pre>
+
+  <script type="module">
+    import { init, generateQuery, decodeResponse, postRequest } from "../js/index.js";
+    function performQuery() {
+      let { query, seed } = generateQuery(17);
+      console.log(query);
+      console.log(query.length);
+      console.log(new Uint8Array(query));
+      console.log(seed);
+      postRequest("http://localhost:8989/query", query).then(response => {
+        console.log(response);
+        let decoded = decodeResponse(response, new Uint8Array(seed));
+        console.log(decoded);
+      });
+
+      const query = generateQuery(document.getElementById("index").value);
+      postRequest(query).then((response) => {
+        document.getElementById("output").innerText = decodeResponse(response);
+      });
+    }
+    init().then(() => {
+
+
+    });
+  </script>
+</body>
+
+</html>
