@@ -1,14 +1,11 @@
 use std::convert::TryInto;
 
 use serde::{Deserialize, Serialize};
-use spiral_rs::{arith::rescale, client::Client, params::*, poly::*};
 use wasm_bindgen::prelude::*;
 use web_sys::console;
 use ypir::{
-    bits::{read_bits, u64s_to_contiguous_bytes, write_bits},
+    bits::{read_bits, write_bits},
     client::*,
-    modulus_switch::ModulusSwitch,
-    params::*,
     serialize::ToBytes,
 };
 
