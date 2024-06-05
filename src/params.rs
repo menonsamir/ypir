@@ -230,7 +230,8 @@ impl PtModulusBits for Params {
 
 pub trait DbRowsCols {
     fn db_rows(&self) -> usize;
-    fn db_rows_padded(&self) -> usize;
+    fn db_rows_padded_normal(&self) -> usize;
+    fn db_rows_padded_simplepir(&self) -> usize;
     fn db_cols_normal(&self) -> usize;
     fn db_cols_simplepir(&self) -> usize;
 }
@@ -240,7 +241,12 @@ impl DbRowsCols for Params {
         let db_rows = 1 << (self.db_dim_1 + self.poly_len_log2);
         db_rows
     }
-    fn db_rows_padded(&self) -> usize {
+    fn db_rows_padded_normal(&self) -> usize {
+        let db_rows = 1 << (self.db_dim_1 + self.poly_len_log2);
+        db_rows + db_rows / 128
+    }
+
+    fn db_rows_padded_simplepir(&self) -> usize {
         let db_rows = 1 << (self.db_dim_1 + self.poly_len_log2);
         db_rows
     }

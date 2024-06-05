@@ -474,9 +474,12 @@ impl<'a> YClient<'a> {
             .as_slice()
             .iter()
             .map(|x| *x as u32)
-            .chain(std::iter::repeat(0).take(self.params.db_rows_padded() - db_rows))
+            .chain(std::iter::repeat(0).take(self.params.db_rows_padded_normal() - db_rows))
             .collect::<Vec<_>>();
-        assert_eq!(packed_query_row_u32.len(), self.params.db_rows_padded());
+        assert_eq!(
+            packed_query_row_u32.len(),
+            self.params.db_rows_padded_normal()
+        );
 
         let query_col = self.generate_query(SEED_1, self.params.db_dim_2, true, target_col);
         let query_col_last_row = &query_col[self.params.poly_len * db_cols..];

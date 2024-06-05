@@ -62,7 +62,7 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
 
     let is_simplepir = true;
     let db_rows = 1 << (params.db_dim_1 + params.poly_len_log2);
-    let db_rows_padded = params.db_rows_padded();
+    let db_rows_padded = params.db_rows_padded_simplepir();
     let db_cols = params.instances * params.poly_len;
 
     let mut rng = thread_rng();
@@ -94,7 +94,7 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
         y_server.perform_offline_precomputation_simplepir(Some(&mut measurements[0]), None, None);
     let offline_server_time_ms = start_offline_comp.elapsed().as_millis();
 
-    let packed_query_row_sz = params.db_rows_padded();
+    let packed_query_row_sz = params.db_rows_padded_simplepir();
     // let mut all_queries_packed = AlignedMemory64::new(K * packed_query_row_sz);
 
     for trial in 0..trials + 1 {
@@ -242,7 +242,7 @@ pub fn run_ypir_on_params<const K: usize>(
     let lwe_params = LWEParams::default();
 
     let db_rows = 1 << (params.db_dim_1 + params.poly_len_log2);
-    let db_rows_padded = params.db_rows_padded();
+    let db_rows_padded = params.db_rows_padded_normal();
     let db_cols = 1 << (params.db_dim_2 + params.poly_len_log2);
 
     let sqrt_n_bytes = db_cols * (lwe_params.pt_modulus as f64).log2().floor() as usize / 8;
@@ -343,7 +343,7 @@ pub fn run_ypir_on_params<const K: usize>(
     let offline_values = y_server.perform_offline_precomputation(Some(&mut measurements[0]));
     let offline_server_time_ms = start_offline_comp.elapsed().as_millis();
 
-    let packed_query_row_sz = params.db_rows_padded();
+    let packed_query_row_sz = params.db_rows_padded_normal();
     // let mut all_queries_packed = AlignedMemory64::new(K * packed_query_row_sz);
 
     for trial in 0..trials + 1 {
@@ -405,7 +405,7 @@ pub fn run_ypir_on_params<const K: usize>(
             .chunks_mut(packed_query_row_sz)
             .enumerate()
         {
-            (&mut chunk_mut[..db_rows]).copy_from_slice(queries[i].2.as_slice());
+            (&mut chunk_mut[..packed_query_row_sz]).copy_from_slice(queries[i].2.as_slice());
         }
 
         let mut offline_values = offline_values.clone();
@@ -534,7 +534,8 @@ mod test {
         let params = params_for_scenario_simplepir(1 << 14, 16384 * 8);
         let pt_iter = std::iter::repeat_with(|| (u16::sample() as u64 % params.pt_modulus) as u16);
         let y_server = YServer::<u16>::new(&params, pt_iter, true, false, true);
-        let mut offline_values = y_server.perform_offline_precomputation_simplepir(None, None, None);
+        let mut offline_values =
+            y_server.perform_offline_precomputation_simplepir(None, None, None);
 
         let target_row = fastrand::usize(..params.db_rows());
 

@@ -174,7 +174,11 @@ where
 
         let db_rows = 1 << (params.db_dim_1 + params.poly_len_log2);
         let db_rows_padded = if pad_rows {
-            params.db_rows_padded()
+            if is_simplepir {
+                params.db_rows_padded_simplepir()
+            } else {
+                params.db_rows_padded_normal()
+            }
         } else {
             db_rows
         };
@@ -245,7 +249,11 @@ where
 
     pub fn db_rows_padded(&self) -> usize {
         if self.pad_rows {
-            self.params.db_rows_padded()
+            if self.ypir_params.is_simplepir {
+                self.params.db_rows_padded_simplepir()
+            } else {
+                self.params.db_rows_padded_normal()
+            }
         } else {
             1 << (self.params.db_dim_1 + self.params.poly_len_log2)
         }
@@ -789,7 +797,10 @@ where
         let db_rows = 1 << (params.db_dim_1 + params.poly_len_log2);
         let db_cols = params.instances * params.poly_len;
 
-        assert_eq!(first_dim_queries_packed.len(), params.db_rows_padded());
+        assert_eq!(
+            first_dim_queries_packed.len(),
+            params.db_rows_padded_simplepir()
+        );
 
         // Begin online computation
 
@@ -1112,7 +1123,7 @@ where
         offline_vals: &mut OfflinePrecomputedValues<'a>,
         query: &[u8],
     ) -> Vec<u8> {
-        let first_dim_bytes_sz = self.params.db_rows_padded() * std::mem::size_of::<u32>();
+        let first_dim_bytes_sz = self.params.db_rows_padded_normal() * std::mem::size_of::<u32>();
         let second_dim_bytes_sz = self.db_cols() * std::mem::size_of::<u64>();
         let pub_param_bytes_sz = self.params.poly_len_log2
             * self.params.t_exp_left
