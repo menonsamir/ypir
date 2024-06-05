@@ -1,0 +1,158 @@
+From 5fb45209b19dc6dac4a5d83b0bb844c7b8eb955c Mon Sep 17 00:00:00 2001
+From: Samir Menon <menon.samir@gmail.com>
+Date: Wed, 5 Jun 2024 04:16:14 +0200
+Subject: [PATCH] Add Docker
+
+---
+ .dockerignore        |  2 ++
+ Dockerfile           | 13 +++++++
+ hintlesspir-notes.md | 83 ++++++++++++++++++++++++++++++++++++++++++++
+ run.sh               | 16 +++++++++
+ 4 files changed, 114 insertions(+)
+ create mode 100644 .dockerignore
+ create mode 100644 Dockerfile
+ create mode 100644 hintlesspir-notes.md
+ create mode 100755 run.sh
+
+diff --git a/.dockerignore b/.dockerignore
+new file mode 100644
+index 0000000..4f875b1
+--- /dev/null
++++ b/.dockerignore
+@@ -0,0 +1,2 @@
++.DS_Store
++bazel-*
+diff --git a/Dockerfile b/Dockerfile
+new file mode 100644
+index 0000000..c564256
+--- /dev/null
++++ b/Dockerfile
+@@ -0,0 +1,13 @@
++FROM gcr.io/bazel-public/bazel:7.2.0 AS build
++
++WORKDIR /app
++COPY bazel ./bazel
++COPY hintless_simplepir ./hintless_simplepir
++COPY linpir ./linpir
++COPY lwe ./lwe
++COPY BUILD .
++COPY WORKSPACE.bazel .
++
++RUN bazel build -c opt //...
++COPY run.sh /app
++ENTRYPOINT ["/app/run.sh", "/app/bazel-bin/hintless_simplepir/hintless_simplepir_benchmarks"]
+\ No newline at end of file
+diff --git a/hintlesspir-notes.md b/hintlesspir-notes.md
+new file mode 100644
+index 0000000..8305e48
+--- /dev/null
++++ b/hintlesspir-notes.md
+@@ -0,0 +1,83 @@
++# HintlessPIR query + response size calculation
++```
++Following Lemma 7 of https://eprint.iacr.org/2023/1733.pdf:
++
++Upload = (k + l) (n log q) + db_cols (log Q)
++Download = 2k(db_rows + n) log q + db_rows (log Q)
++
++k     = 2
++l     = 6
++n     = 4096
++log q = 90
++log Q = 32
++```
++
++## DB sizes
++We use KB, MB, and GB for 2^10, 2^20, and 2^30 bytes,
++respectively.
++
++```
++ 1 GB: 32768 x 32768
++ 2 GB: 32768 x 65536
++ 4 GB: 32768 x 131072
++ 8 GB: 32768 x 262144
++16 GB: 65536 x 262144
++32 GB: 65536 x 524288
++
++1GB DB (32768 x 32768):
++Upload: 499712 bytes
++Download: 1789952 bytes
++
++2GB DB (32768 x 65536):
++Upload: 630784 bytes
++Download: 1789952 bytes
++
++4GB DB (32768 x 131072):
++Upload: 892928 bytes
++Download: 1789952 bytes
++
++8GB DB (32768 x 262144):
++Upload: 1417216 bytes
++Download: 1789952 bytes
++
++16GB DB (65536 x 262144):
++Upload: 1417216 bytes
++Download: 3395584 bytes
++
++32GB DB (65536 x 524288):
++Upload: 2465792 bytes
++Download: 3395584 bytes
++```
++
++## Query
++for 32768x32768:
++= ((2 + 6) * (4096 * 90) + 2^15 * 32)/8 
++= 499712
++= 488 KB
++
++for 32768x262144:
++= ((2 + 6) * (4096 * 90) + 2^18 * 32)/8 
++= 1417216
++= 1384 KB
++
++for 65536x524288:
++= ((2 + 6) * (4096 * 90) + 2^19 * 32)/8 
++= 2465792
++= 2408 KB
++
++
++## Response
++for 32768x32768:
++= ((2 * 2) * (2^15 + 4096) * 90 + 2^15 * 32)/8 
++= 1789952
++= 1748 KB
++
++for 32768x262144:
++= ((2 * 2) * (2^15 + 4096) * 90 + 2^15 * 32)/8 
++= 1789952
++= 1748 KB
++
++for 65536x524288:
++= ((2 * 2) * (2^16 + 4096) * 90 + 2^16 * 32)/8 
++= 3395584
++= 3316 KB
+diff --git a/run.sh b/run.sh
+new file mode 100755
+index 0000000..9476e35
+--- /dev/null
++++ b/run.sh
+@@ -0,0 +1,16 @@
++#!/bin/sh
++
++# takes in the string "1GB", "8GB" or "32GB"
++# big if statement:
++
++if [ "$2" = "test" ]; then
++    $1 --benchmark_filter=BM_HintlessPirRlwe64 --benchmark_min_time=0.1 --num_rows 1024 --num_cols 1024
++elif [ "$2" = "1GB" ]; then
++    $1 --benchmark_filter=BM_HintlessPirRlwe64 --benchmark_min_time=0.1 --num_rows 32768 --num_cols 32768
++elif [ "$2" = "8GB" ]; then
++    $1 --benchmark_filter=BM_HintlessPirRlwe64 --benchmark_min_time=0.1 --num_rows 32768 --num_cols 262144
++elif [ "$2" = "32GB" ]; then
++    $1 --benchmark_filter=BM_HintlessPirRlwe64 --benchmark_min_time=0.1 --num_rows 65536 --num_cols 524288
++else
++    echo "Invalid input"
++fi
+-- 
+2.34.1
+
