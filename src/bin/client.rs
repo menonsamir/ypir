@@ -112,11 +112,14 @@ fn main() {
         println!("looking_for: {:?}", looking_for);
 
         let mut found = false;
+        let mut i = 0;
         for chunk in result.chunks_exact(hash_bytes) {
             if chunk == looking_for {
+                println!("Found at index {}", i);
                 found = true;
                 break;
             }
+            i += hash_bytes;
         }
 
         if found {

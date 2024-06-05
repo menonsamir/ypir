@@ -407,8 +407,7 @@ impl<'a> YClient<'a> {
             let ct_raw = ct.raw();
 
             // only care about the last row
-            let as_lwe = self.rlwes_to_lwes(&[ct_raw]);
-            let lwe_last_row = &as_lwe[self.params.poly_len * self.params.poly_len..];
+            let lwe_last_row = ct_raw.get_poly(1, 0);
 
             out.extend_from_slice(lwe_last_row);
         }
@@ -492,14 +491,14 @@ impl<'a> YClient<'a> {
 
     pub fn generate_full_query_simplepir(
         &self,
-        target_idx: usize,
+        target_idx: u64,
     ) -> (AlignedMemory64, AlignedMemory64) {
         // setup
         let db_rows = 1 << (self.params.db_dim_1 + self.params.poly_len_log2);
         let db_cols = self.params.instances * self.params.poly_len;
 
-        let target_row = target_idx / db_cols;
-        let target_col = target_idx % db_cols;
+        let target_row = (target_idx / db_cols as u64) as usize;
+        let target_col = (target_idx % db_cols as u64) as usize;
         debug!(
             "Target item: {} ({}, {})",
             target_idx, target_row, target_col
@@ -638,7 +637,7 @@ impl YPIRClient {
 
     pub fn generate_query_simplepir(&self, target_row: usize) -> (YPIRSimpleQuery, Seed) {
         assert!(target_row < self.params.db_rows());
-        let target_idx = target_row * self.params.db_cols_simplepir();
+        let target_idx = target_row as u64 * self.params.db_cols_simplepir() as u64;
         let client_seed = generate_secure_random_seed();
         let mut client = Client::init(&self.params);
         client.generate_secret_keys_from_seed(client_seed);
