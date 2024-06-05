@@ -14,7 +14,7 @@ http_server = ["actix-web", "actix-http", "actix-cors", "futures", "bzip2", "bas
 http_client = ["reqwest"]
 
 [dependencies]
-spiral-rs = { git = "https://github.com/menonsamir/spiral-rs.git", default-features = false, rev = "8e1bed3" }
+spiral-rs = { git = "https://github.com/menonsamir/spiral-rs.git", rev = "f2c23c7" }
 # spiral-rs = { path = "../spiral-rs/", default-features = false }
 rand = { version = "0.8.5", features = ["small_rng"] }
 rand_chacha = "0.3.1"
