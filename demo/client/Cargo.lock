@@ -303,12 +303,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c8640c5d730cb13ebd907d8d04b52f55ac9a2eec55b440c8892f40d56c76c1d"
 
 [[package]]
-name = "memory_units"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8452105ba047068f40ff7093dd1d9da90898e63dd61736462e9cdda6a90ad3c3"
-
-[[package]]
 name = "nu-ansi-term"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -489,6 +483,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
+dependencies = [
+ "cfg-if 1.0.0",
+ "cpufeatures",
+ "digest",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -524,7 +529,7 @@ dependencies = [
 [[package]]
 name = "spiral-rs"
 version = "0.4.0"
-source = "git+https://github.com/menonsamir/spiral-rs.git?rev=8e1bed3#8e1bed3b79b80646133171c94e2b88579c88ed89"
+source = "git+https://github.com/menonsamir/spiral-rs.git?rev=f2c23c7#f2c23c7ced192e80687b52134ee861098f764769"
 dependencies = [
  "fastrand",
  "getrandom",
@@ -789,18 +794,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wee_alloc"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbb3b5a6b2bb17cb6ad44a2e68a43e8d2722c997da10e928665c72ec6c0a0b8e"
-dependencies = [
- "cfg-if 0.1.10",
- "libc",
- "memory_units",
- "winapi",
-]
-
-[[package]]
 name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -908,7 +901,8 @@ dependencies = [
  "rand_chacha",
  "serde",
  "serde_json",
- "spiral-rs 0.4.0 (git+https://github.com/menonsamir/spiral-rs.git?rev=8e1bed3)",
+ "sha1",
+ "spiral-rs 0.4.0 (git+https://github.com/menonsamir/spiral-rs.git?rev=f2c23c7)",
  "test-log",
 ]
 
@@ -918,7 +912,10 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "futures",
+ "getrandom",
  "js-sys",
+ "rand",
+ "rand_core",
  "serde",
  "serde-wasm-bindgen",
  "spiral-rs 0.4.0",
@@ -926,6 +923,5 @@ dependencies = [
  "wasm-bindgen-futures 0.3.27",
  "wasm-bindgen-test",
  "web-sys",
- "wee_alloc",
  "ypir",
 ]

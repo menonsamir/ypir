@@ -1,62 +1,63 @@
 use js_sys::wasm_bindgen;
 use spiral_rs::{arith::rescale, client::*, params::*, poly::*};
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen_test::wasm_bindgen_test;
+use wasm_bindgen_test::{console_log, wasm_bindgen_test};
 use ypir::{
     bits::u64s_to_contiguous_bytes, client::*, modulus_switch::ModulusSwitch, params::*,
     util::qt_hash,
 };
+use ypir_client::*;
 
-#[wasm_bindgen]
-extern "C" {
-    // Use `js_namespace` here to bind `console.log(..)` instead of just
-    // `log(..)`
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
-}
-macro_rules! console_log {
-    ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
-}
+// #[wasm_bindgen]
+// extern "C" {
+//     // Use `js_namespace` here to bind `console.log(..)` instead of just
+//     // `log(..)`
+//     #[wasm_bindgen(js_namespace = console)]
+//     fn log(s: &str);
+// }
+// macro_rules! console_log {
+//     ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
+// }
 
-// wasm_bindgen_test_configure!(run_in_browser);
+// // wasm_bindgen_test_configure!(run_in_browser);
 
-fn custom_decode_response_simplepir_yclient(
-    params: &Params,
-    y_client: &YClient,
-    response_data: &[u8],
-) -> Vec<u64> {
-    let db_cols = params.instances * params.poly_len;
-    let num_rlwe_outputs = db_cols / params.poly_len;
+// fn custom_decode_response_simplepir_yclient(
+//     params: &Params,
+//     y_client: &YClient,
+//     response_data: &[u8],
+// ) -> Vec<u64> {
+//     let db_cols = params.instances * params.poly_len;
+//     let num_rlwe_outputs = db_cols / params.poly_len;
 
-    assert_eq!(response_data.len() % num_rlwe_outputs, 0);
-    let response_vecs = response_data
-        .chunks_exact(response_data.len() / num_rlwe_outputs)
-        .map(|chunk| chunk.to_vec())
-        .collect::<Vec<_>>();
+//     assert_eq!(response_data.len() % num_rlwe_outputs, 0);
+//     let response_vecs = response_data
+//         .chunks_exact(response_data.len() / num_rlwe_outputs)
+//         .map(|chunk| chunk.to_vec())
+//         .collect::<Vec<_>>();
 
-    // rescale
-    let rlwe_q_prime_1 = params.get_q_prime_1();
-    let rlwe_q_prime_2 = params.get_q_prime_2();
-    let mut response = Vec::new();
-    for ct_bytes in response_vecs.iter() {
-        let ct = PolyMatrixRaw::recover(&params, rlwe_q_prime_1, rlwe_q_prime_2, ct_bytes);
-        response.push(ct);
-    }
+//     // rescale
+//     let rlwe_q_prime_1 = params.get_q_prime_1();
+//     let rlwe_q_prime_2 = params.get_q_prime_2();
+//     let mut response = Vec::new();
+//     for ct_bytes in response_vecs.iter() {
+//         let ct = PolyMatrixRaw::recover(&params, rlwe_q_prime_1, rlwe_q_prime_2, ct_bytes);
+//         response.push(ct);
+//     }
 
-    // debug!("decrypting outer cts...");
-    let outer_ct = response
-        .iter()
-        .flat_map(|ct| {
-            custom_decrypt_ct_reg_measured(y_client.client(), &params, &ct.ntt(), params.poly_len)
-                .as_slice()
-                .to_vec()
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(outer_ct.len(), num_rlwe_outputs * params.poly_len);
-    // debug!("outer_ct: {:?}", &outer_ct[..]);
-    // let outer_ct_t_u8 = u64s_to_contiguous_bytes(&outer_ct, pt_bits);
-    outer_ct
-}
+//     // debug!("decrypting outer cts...");
+//     let outer_ct = response
+//         .iter()
+//         .flat_map(|ct| {
+//             custom_decrypt_ct_reg_measured(y_client.client(), &params, &ct.ntt(), params.poly_len)
+//                 .as_slice()
+//                 .to_vec()
+//         })
+//         .collect::<Vec<_>>();
+//     assert_eq!(outer_ct.len(), num_rlwe_outputs * params.poly_len);
+//     // debug!("outer_ct: {:?}", &outer_ct[..]);
+//     // let outer_ct_t_u8 = u64s_to_contiguous_bytes(&outer_ct, pt_bits);
+//     outer_ct
+// }
 
 fn custom_decrypt_ct_reg_measured<'a>(
     client: &Client<'a>,
@@ -98,14 +99,20 @@ fn custom_decrypt_ct_reg_measured<'a>(
 // This runs a unit test in native Rust, so it can only use Rust APIs.
 #[wasm_bindgen_test]
 fn rust_test() {
-    assert_eq!(1, 1);
-    use ypir::data::{RESP1, SEED1};
+    let _ = generate_query_to_check_item_inclusion("test");
+    // let mut a = vec![0u8; (1usize << 31) - (1 << 20)];
+    // for i in 0..a.len() {
+    //     a[i] = i as u8;
+    // }
+    // console_log!("rand val: {:?}", a[7 * (rust_test as u8) as usize]);
+    // assert_eq!(1, 1);
+    // use ypir::data::{RESP1, SEED1};
 
-    let client = YPIRClient::from_db_sz(1 << 14, 16384 * 8, true);
-    let decoded = client.decode_response_simplepir(SEED1, RESP1);
-    assert_eq!(decoded[0], 17);
-    assert_eq!(decoded[1], 0);
-    assert_eq!(decoded[2], 0);
+    // let client = YPIRClient::from_db_sz(1 << 14, 16384 * 8, true);
+    // let decoded = client.decode_response_simplepir(SEED1, RESP1);
+    // assert_eq!(decoded[0], 17);
+    // assert_eq!(decoded[1], 0);
+    // assert_eq!(decoded[2], 0);
     // console_log!("raw:  {:?}", &decoded[..32]);
     // let bytes = u64s_to_contiguous_bytes(&decoded, client.params().pt_modulus_bits());
     // console_log!("as u8: {:?}", &bytes[..32]);

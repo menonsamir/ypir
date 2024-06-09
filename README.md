@@ -125,13 +125,22 @@ This is an annotated version of the output, detailing what each measurement mean
 }
 ```
 
-### Acknowledgements
+## Server & Client
+
+You can run YPIR as a standalone HTTP server using a command like:
+
+```sh
+$ RUST_LOG=debug cargo run --profile release-with-debug --bin server 32768 262144 --is-simplepir --inp-file ../passwords-data/hibp-passwords.bin -p 8989 --hint-file ../passwords-data/hibp-passwords-2-hint.bin
+```
+
+
+## Acknowledgements
 
 YPIR is based on [DoublePIR](https://eprint.iacr.org/2022/949), and this implementation
 uses matrix-vector multiplication routines based on the ones in [ahenzinger/simplepir](https://github.com/ahenzinger/simplepir).
 We also use the [menonsamir/spiral-rs](https://github.com/menonsamir/spiral-rs) library for Spiral to handle RLWE ciphertexts.
 
-### Citing
+## Citing
 
 ```
 @misc{cryptoeprint:2024/270,

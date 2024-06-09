@@ -1,11 +1,31 @@
 use std::{
     fs::File,
-    io::{BufReader, Read, Seek},
+    io::{BufReader, Read, Seek, Write},
 };
 
 use spiral_rs::{aligned_memory::AlignedMemory64, params::*, poly::*, util::read_arbitrary_bits};
 
 use crate::client::{YPIRQuery, YPIRSimpleQuery};
+
+pub type Precomp<'a> = Vec<(PolyMatrixNTT<'a>, Vec<PolyMatrixNTT<'a>>, Vec<Vec<usize>>)>;
+
+#[cfg(feature = "server")]
+use crate::server::YServer;
+
+#[cfg(not(feature = "server"))]
+type YServer<'a, T> = T;
+
+#[derive(Clone)]
+pub struct OfflinePrecomputedValues<'a> {
+    pub hint_0: Vec<u64>,
+    pub hint_1: Vec<u64>,
+    pub pseudorandom_query_1: Vec<PolyMatrixNTT<'a>>,
+    pub y_constants: (Vec<PolyMatrixNTT<'a>>, Vec<PolyMatrixNTT<'a>>),
+    pub smaller_server: Option<YServer<'a, u16>>,
+    pub prepacked_lwe: Vec<Vec<PolyMatrixNTT<'a>>>,
+    pub fake_pack_pub_params: Vec<PolyMatrixNTT<'a>>,
+    pub precomp: Precomp<'a>,
+}
 
 pub trait ToBytes {
     fn to_bytes(&self) -> Vec<u8>;
@@ -15,8 +35,16 @@ pub trait AsBytes {
     fn as_bytes(&self) -> &[u8];
 }
 
+pub trait AsBytesMut {
+    fn as_bytes_mut(&mut self) -> &mut [u8];
+}
+
 pub trait FromBytes {
     fn from_bytes(data: &[u8]) -> Self;
+}
+
+pub trait FromBytesParams<'a> {
+    fn from_bytes(data: &[u8], params: &'a Params) -> Self;
 }
 
 impl ToBytes for &[u32] {
@@ -73,12 +101,36 @@ impl AsBytes for &[u64] {
     }
 }
 
+impl AsBytesMut for &mut [u64] {
+    fn as_bytes_mut(&mut self) -> &mut [u8] {
+        // fast
+        unsafe {
+            let ptr = self.as_mut_ptr() as *mut u8;
+            std::slice::from_raw_parts_mut(ptr, self.len() * 8)
+        }
+    }
+}
+
 impl FromBytes for AlignedMemory64 {
     fn from_bytes(data: &[u8]) -> Self {
         // fast
         unsafe {
             let mut out = AlignedMemory64::new(data.len() / 8);
             let u8_mut = std::slice::from_raw_parts(data.as_ptr(), data.len());
+            let ptr = out.as_mut_ptr() as *mut u8;
+            std::ptr::copy_nonoverlapping(u8_mut.as_ptr(), ptr, data.len());
+            out
+        }
+    }
+}
+
+impl FromBytes for Vec<u64> {
+    fn from_bytes(data: &[u8]) -> Self {
+        // fast
+        unsafe {
+            let mut out = Vec::with_capacity(data.len() / 8);
+            let u8_mut = std::slice::from_raw_parts(data.as_ptr(), data.len());
+            out.set_len(data.len() / 8);
             let ptr = out.as_mut_ptr() as *mut u8;
             std::ptr::copy_nonoverlapping(u8_mut.as_ptr(), ptr, data.len());
             out
@@ -102,6 +154,209 @@ impl ToBytes for YPIRSimpleQuery {
         out.extend_from_slice(self.0.as_slice().as_bytes());
         out.extend_from_slice(self.1.as_slice().as_bytes());
         out
+    }
+}
+
+impl ToBytes for Vec<usize> {
+    fn to_bytes(&self) -> Vec<u8> {
+        // fast
+        unsafe {
+            let ptr = self.as_ptr() as *const u8;
+            std::slice::from_raw_parts(ptr, self.len() * 8).to_vec()
+        }
+    }
+}
+
+impl FromBytesParams<'_> for Vec<usize> {
+    fn from_bytes(data: &[u8], _params: &Params) -> Vec<usize> {
+        // fast
+        unsafe {
+            let mut out = Vec::with_capacity(data.len() / std::mem::size_of::<usize>());
+            let u8_mut = std::slice::from_raw_parts(data.as_ptr(), data.len());
+            out.set_len(data.len() / std::mem::size_of::<usize>());
+            let ptr = out.as_mut_ptr() as *mut u8;
+            std::ptr::copy_nonoverlapping(u8_mut.as_ptr(), ptr, data.len());
+            out
+        }
+    }
+}
+
+impl<'a> ToBytes for PolyMatrixNTT<'a> {
+    fn to_bytes(&self) -> Vec<u8> {
+        // write rows, cols, and data
+        let mut out = Vec::new();
+        out.extend_from_slice(&self.rows.to_be_bytes());
+        out.extend_from_slice(&self.cols.to_be_bytes());
+        out.extend_from_slice(self.as_slice().as_bytes());
+        out
+    }
+}
+
+impl<'a> FromBytesParams<'a> for PolyMatrixNTT<'a> {
+    fn from_bytes(data: &[u8], params: &'a Params) -> PolyMatrixNTT<'a> {
+        let rows = u64::from_be_bytes(data[0..8].try_into().unwrap()) as usize;
+        let cols = u64::from_be_bytes(data[8..16].try_into().unwrap()) as usize;
+        let data = &data[16..];
+        let mut out = PolyMatrixNTT::zero(params, rows, cols);
+        out.as_mut_slice().as_bytes_mut().copy_from_slice(data);
+        out
+    }
+}
+
+impl<T: ToBytes> ToBytes for Vec<T> {
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&(self.len() as u64).to_be_bytes());
+        for item in self {
+            let item_bytes = item.to_bytes();
+            out.extend_from_slice(&(item_bytes.len() as u64).to_be_bytes());
+            out.extend_from_slice(&item_bytes);
+        }
+        out
+    }
+}
+
+impl<'a, T: FromBytesParams<'a>> FromBytesParams<'a> for Vec<T> {
+    fn from_bytes(data: &[u8], params: &'a Params) -> Vec<T> {
+        let mut out = Vec::new();
+        let mut data = data;
+        let len = u64::from_be_bytes(data[0..8].try_into().unwrap()) as usize;
+        data = &data[8..];
+        for _ in 0..len {
+            let item_len = u64::from_be_bytes(data[0..8].try_into().unwrap()) as usize;
+            let item = T::from_bytes(&data[8..8 + item_len], params);
+            out.push(item);
+            data = &data[8 + item_len..];
+        }
+        out
+    }
+}
+
+// length 2 tuple
+impl<T1: ToBytes, T2: ToBytes> ToBytes for (T1, T2) {
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        let item1 = self.0.to_bytes();
+        let item2 = self.1.to_bytes();
+        out.extend_from_slice(&(item1.len() as u64).to_be_bytes());
+        out.extend_from_slice(&item1);
+        out.extend_from_slice(&item2);
+        out
+    }
+}
+
+impl<'a, T1: FromBytesParams<'a>, T2: FromBytesParams<'a>> FromBytesParams<'a> for (T1, T2) {
+    fn from_bytes(data: &[u8], params: &'a Params) -> (T1, T2) {
+        let len1 = u64::from_be_bytes(data[0..8].try_into().unwrap()) as usize;
+        let item1 = T1::from_bytes(&data[8..8 + len1], params);
+        let item2 = T2::from_bytes(&data[8 + len1..], params);
+        (item1, item2)
+    }
+}
+
+// length 3 tuple
+impl<T1: ToBytes, T2: ToBytes, T3: ToBytes> ToBytes for (T1, T2, T3) {
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        let item1 = self.0.to_bytes();
+        let item2 = self.1.to_bytes();
+        let item3 = self.2.to_bytes();
+        out.extend_from_slice(&(item1.len() as u64).to_be_bytes());
+        out.extend_from_slice(&item1);
+        out.extend_from_slice(&(item2.len() as u64).to_be_bytes());
+        out.extend_from_slice(&item2);
+        out.extend_from_slice(&item3);
+        out
+    }
+}
+
+impl<'a, T1: FromBytesParams<'a>, T2: FromBytesParams<'a>, T3: FromBytesParams<'a>>
+    FromBytesParams<'a> for (T1, T2, T3)
+{
+    fn from_bytes(data: &[u8], params: &'a Params) -> (T1, T2, T3) {
+        let len1 = u64::from_be_bytes(data[0..8].try_into().unwrap()) as usize;
+        let item1 = T1::from_bytes(&data[8..8 + len1], params);
+        let len2 = u64::from_be_bytes(data[8 + len1..16 + len1].try_into().unwrap()) as usize;
+        let item2 = T2::from_bytes(&data[16 + len1..16 + len1 + len2], params);
+        let item3 = T3::from_bytes(&data[16 + len1 + len2..], params);
+        (item1, item2, item3)
+    }
+}
+
+// pub hint_0: Vec<u64>,
+// pub hint_1: Vec<u64>,
+// pub pseudorandom_query_1: Vec<PolyMatrixNTT<'a>>,
+// pub y_constants: (Vec<PolyMatrixNTT<'a>>, Vec<PolyMatrixNTT<'a>>),
+// pub smaller_server: Option<YServer<'a, u16>>,
+// pub prepacked_lwe: Vec<Vec<PolyMatrixNTT<'a>>>,
+// pub fake_pack_pub_params: Vec<PolyMatrixNTT<'a>>,
+// pub precomp: Precomp<'a>,
+
+impl<'a> ToBytes for OfflinePrecomputedValues<'a> {
+    fn to_bytes(&self) -> Vec<u8> {
+        assert!(self.smaller_server.is_none());
+
+        let mut out = Vec::new();
+        out.extend_from_slice(&self.hint_0.as_slice().to_bytes());
+        out.extend_from_slice(&self.hint_1.as_slice().to_bytes());
+        out.extend_from_slice(&self.pseudorandom_query_1.to_bytes());
+        out.extend_from_slice(&self.y_constants.0.to_bytes());
+        out.extend_from_slice(&self.y_constants.1.to_bytes());
+        out.extend_from_slice(&self.prepacked_lwe.to_bytes());
+        out.extend_from_slice(&self.fake_pack_pub_params.to_bytes());
+        out.extend_from_slice(&self.precomp.to_bytes());
+        out
+    }
+}
+
+impl<'a> FromBytesParams<'a> for OfflinePrecomputedValues<'a> {
+    fn from_bytes(data: &[u8], params: &'a Params) -> OfflinePrecomputedValues<'a> {
+        let mut data = data;
+        let hint_0 = Vec::<u64>::from_bytes(data);
+        data = &data[hint_0.len() * 8..];
+        let hint_1 = Vec::<u64>::from_bytes(data);
+        data = &data[hint_1.len() * 8..];
+        let pseudorandom_query_1 = Vec::<PolyMatrixNTT>::from_bytes(data, params);
+        data = &data[pseudorandom_query_1.to_bytes().len()..];
+        let y_constants = (
+            Vec::<PolyMatrixNTT>::from_bytes(data, params),
+            Vec::<PolyMatrixNTT>::from_bytes(data, params),
+        );
+        data = &data[y_constants.0.to_bytes().len()..];
+        let prepacked_lwe = Vec::<Vec<PolyMatrixNTT>>::from_bytes(data, params);
+        data = &data[prepacked_lwe.to_bytes().len()..];
+        let fake_pack_pub_params = Vec::<PolyMatrixNTT>::from_bytes(data, params);
+        data = &data[fake_pack_pub_params.to_bytes().len()..];
+        let precomp = Precomp::from_bytes(data, params);
+        OfflinePrecomputedValues {
+            hint_0,
+            hint_1,
+            pseudorandom_query_1,
+            y_constants,
+            smaller_server: None,
+            prepacked_lwe,
+            fake_pack_pub_params,
+            precomp,
+        }
+    }
+}
+
+pub fn read_file_to_vec_u64(filename: &str) -> Vec<u64> {
+    let mut file = File::open(filename).unwrap();
+    let mut data = Vec::new();
+    file.read_to_end(&mut data).unwrap();
+    let mut out = Vec::with_capacity(data.len() / 8);
+    let mut iter = data.chunks_exact(8);
+    for _ in 0..iter.len() {
+        out.push(u64::from_le_bytes(iter.next().unwrap().try_into().unwrap()));
+    }
+    out
+}
+
+pub fn write_vec_u64_to_file(filename: &str, data: &[u64]) {
+    let mut file = File::create(filename).unwrap();
+    for &x in data {
+        file.write_all(&x.to_le_bytes()).unwrap();
     }
 }
 
@@ -240,7 +495,7 @@ impl<R: Read + Seek> Iterator for FilePtIter<R> {
         // reads file, pt_bits at a time
 
         // max_filled_col pt-bits sized words contain data in each row (rest are zeros)
-        let max_filled_col = self.bytes_per_row / self.pt_bits;
+        let max_filled_col = self.bytes_per_row * 8 / self.pt_bits;
         assert!(max_filled_col <= self.db_cols);
         if self.col_idx >= self.db_cols {
             self.col_idx = 0;
@@ -264,15 +519,18 @@ impl<R: Read + Seek> Iterator for FilePtIter<R> {
             self.buf_pos = 0;
             self.buf.fill(0);
 
-            let read = self.file.read(&mut self.buf[..self.pt_bits]).unwrap();
-            if read == 0 {
-                return None;
+            let read = self.file.read_exact(&mut self.buf[..self.pt_bits]);
+            if read.is_err() {
+                // TODO: behavior at end-of-file
+                // For now, just produce zeros infinitely now
+                self.buf_pos = 8;
+                return Some(0);
             }
 
             // now, populate buf_vals with the (up to) 8 pt_bits-sized words
             self.buf_vals.fill(0);
             let mut bit_offs = 0;
-            for i in 0..read {
+            for i in 0..8 {
                 let val = read_arbitrary_bits(&self.buf, bit_offs, self.pt_bits);
                 self.buf_vals[i] = val as u16;
                 bit_offs += self.pt_bits;

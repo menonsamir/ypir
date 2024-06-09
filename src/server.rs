@@ -10,7 +10,7 @@ use spiral_rs::aligned_memory::AlignedMemory64;
 use spiral_rs::{arith::*, client::*, params::*, poly::*};
 
 use crate::measurement::Measurement;
-use crate::serialize::{uncondense_matrix, unpack_vec_pm, FromBytes};
+use crate::serialize::*;
 
 use super::{
     bits::*,
@@ -139,20 +139,6 @@ pub fn generate_fake_pack_pub_params<'a>(params: &'a Params) -> Vec<PolyMatrixNT
         &mut ChaCha20Rng::from_seed(STATIC_SEED_2),
     );
     pack_pub_params
-}
-
-pub type Precomp<'a> = Vec<(PolyMatrixNTT<'a>, Vec<PolyMatrixNTT<'a>>, Vec<Vec<usize>>)>;
-
-#[derive(Clone)]
-pub struct OfflinePrecomputedValues<'a> {
-    pub hint_0: Vec<u64>,
-    pub hint_1: Vec<u64>,
-    pub pseudorandom_query_1: Vec<PolyMatrixNTT<'a>>,
-    pub y_constants: (Vec<PolyMatrixNTT<'a>>, Vec<PolyMatrixNTT<'a>>),
-    pub smaller_server: Option<YServer<'a, u16>>,
-    pub prepacked_lwe: Vec<Vec<PolyMatrixNTT<'a>>>,
-    pub fake_pack_pub_params: Vec<PolyMatrixNTT<'a>>,
-    pub precomp: Precomp<'a>,
 }
 
 #[derive(Clone)]
@@ -567,6 +553,8 @@ where
     pub fn perform_offline_precomputation_simplepir(
         &self,
         measurement: Option<&mut Measurement>,
+        hint_0_load: Option<&Vec<u64>>,
+        hint_0_store: Option<&String>,
     ) -> OfflinePrecomputedValues<'a> {
         // Set up some parameters
 
@@ -579,7 +567,15 @@ where
         // Begin offline precomputation
 
         let now = Instant::now();
-        let hint_0: Vec<u64> = self.answer_hint_ring(SEED_0, db_cols);
+        let hint_0 = if let Some(hint_0_load) = hint_0_load {
+            hint_0_load.to_vec()
+        } else {
+            let hint_0_res = self.answer_hint_ring(SEED_0, db_cols);
+            if let Some(hint_0_store) = hint_0_store {
+                write_vec_u64_to_file(hint_0_store, &hint_0_res);
+            }
+            hint_0_res
+        };
         // hint_0 is poly_len x db_cols
         let simplepir_prep_time_ms = now.elapsed().as_millis();
         if let Some(measurement) = measurement {

@@ -4,7 +4,7 @@ use log::debug;
 
 use spiral_rs::{arith::*, gadget::*, ntt::*, params::*, poly::*};
 
-use crate::{serialize::*, server::Precomp};
+use crate::serialize::*;
 
 use super::{kernel::*, util::*};
 

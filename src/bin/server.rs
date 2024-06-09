@@ -8,7 +8,7 @@ use spiral_rs::params::*;
 use ypir::bits::u64s_to_contiguous_bytes;
 use ypir::params::*;
 use ypir::scheme::*;
-use ypir::serialize::FilePtIter;
+use ypir::serialize::*;
 use ypir::server::*;
 
 /// Run the YPIR server with the given parameters
@@ -28,6 +28,9 @@ struct Args {
     /// Read the database from an input file
     #[clap(long, short)]
     inp_file: Option<String>,
+    /// Optionally store the hint to a file for later fast initialization
+    #[clap(long, short)]
+    hint_file: Option<String>,
     /// Use a random database
     #[clap(long, short, action)]
     random: bool,
@@ -77,6 +80,7 @@ async fn main() -> std::io::Result<()> {
         num_items,
         item_size_bits,
         inp_file,
+        hint_file,
         random,
         verbose,
         is_simplepir,
@@ -140,7 +144,25 @@ async fn main() -> std::io::Result<()> {
     };
     println!("Performing precomputation...");
     let now = Instant::now();
-    let offline_values = server.perform_offline_precomputation_simplepir(None);
+    // 1. Check if hint_file exists
+    let mut hint_load = None;
+    let mut hint_store = None;
+    if let Some(hint_file) = hint_file {
+        if std::path::Path::new(&hint_file).exists() {
+            println!("Loading hint from file...");
+            let hint_file = read_file_to_vec_u64(&hint_file);
+            hint_load = Some(hint_file);
+        } else {
+            println!("Storing hint to file.");
+            hint_store = Some(hint_file);
+        }
+    }
+
+    let offline_values = server.perform_offline_precomputation_simplepir(
+        None,
+        hint_load.as_ref(),
+        hint_store.as_ref(),
+    );
     println!("Done. ({} s)", now.elapsed().as_secs());
 
     let corr_result_item_1 = server
@@ -156,12 +178,13 @@ async fn main() -> std::io::Result<()> {
         server,
         offline_values,
     };
+    let app_data = Data::new(state);
 
     println!("Listening on http://127.0.0.1:{}", port);
     HttpServer::new(move || {
         App::new()
             .wrap(Cors::permissive())
-            .app_data(Data::new(state.clone()))
+            .app_data(app_data.clone())
             .app_data(web::PayloadConfig::new(1usize << 32))
             .service(index)
             .service(query)
