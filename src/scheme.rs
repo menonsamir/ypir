@@ -124,7 +124,7 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
 
             let y_client = YClient::new(client, &params);
             let (packed_query_row, pack_pub_params_row_1s) =
-                y_client.generate_full_query_simplepir(target_idx);
+                y_client.generate_full_query_simplepir(target_idx as u64);
 
             let query_size = ((packed_query_row.len() as f64 * params.modulus_log2 as f64) / 8.0)
                 .ceil() as usize;
