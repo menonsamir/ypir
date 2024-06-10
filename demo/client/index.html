@@ -13,18 +13,20 @@
     .good {
       color: green;
     }
-
-    .message {
-      font-style: italic;
-    }
   </style>
 </head>
 
 <body>
+  <h2>Password checker</h2>
+  <p>
+    Use YPIR to private check whether a password has previously appeared in the
+    <a href="https://haveibeenpwned.com/Passwords">Have I Been Pwned</a>
+    database of ~1 billion breached passwords.
+  </p>
   <input type="text" id="password" />
   <button type="button" id="submit">&gt;</button>
   <br />
-  <p id="output" class="message"></p>
+  <p id="output"></p>
 
   <script type="module">
     import { init, generateQueryToCheckItemInclusion, decodeResponseToInclusionQuery, postRequest } from "../js/index.js";
