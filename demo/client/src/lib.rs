@@ -91,7 +91,7 @@ pub fn generate_query(desired_index: usize) -> Result<JsValue, JsValue> {
 
     let (num_items, bits_per_item, is_simplepir) = get_db_conf();
     let client = YPIRClient::from_db_sz(num_items, bits_per_item, is_simplepir);
-    let (query, seed) = client.generate_query_simplepir(desired_index as usize);
+    let (query, seed) = client.generate_query_simplepir(desired_index);
     let query_bytes = query.to_bytes();
     Ok(serde_wasm_bindgen::to_value(&QueryAndSeed {
         query: query_bytes,
@@ -105,6 +105,7 @@ pub fn generate_query_to_check_item_inclusion(target_item: &str) -> Result<JsVal
     assert!(is_simplepir);
     let log2_num_items = num_items.trailing_zeros() as usize;
     let bucket = YPIRClient::bucket(log2_num_items, target_item);
+    web_sys::console::log_1(&JsValue::from_str(&format!("bucket {:?}.", bucket)));
     generate_query(bucket)
 }
 
