@@ -133,15 +133,13 @@ We also use the [menonsamir/spiral-rs](https://github.com/menonsamir/spiral-rs) 
 
 ### Citing
 
+Please cite this work as:
+
 ```
-@misc{cryptoeprint:2024/270,
-  author = {Samir Jordan Menon and David J. Wu},
-  title = {YPIR: High-Throughput Single-Server PIR with Silent Preprocessing},
-  howpublished = {Cryptology ePrint Archive, Paper 2024/270},
-  year = {2024},
-  note = {\url{https://eprint.iacr.org/2024/270}},
-  url = {https://eprint.iacr.org/2024/270}
+@inproceedings{MW24,
+  author    = {Samir Jordan Menon and David J. Wu},
+  title     = {{YPIR}: High-Throughput Single-Server {PIR} with Silent Preprocessing},
+  booktitle = {{USENIX} Security Symposium},
+  year      = {2024}
 }
 ```
-
-(to be updated)
