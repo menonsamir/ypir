@@ -7,7 +7,7 @@ This is joint work with [David Wu](https://www.cs.utexas.edu/~dwu4/).
 ## Running
 
 To build and run this code:
-1. Ensure you are running on Ubuntu, and that AVX-512 is available on the CPU (you can run `lscpu` and look for the `avx512f` flag).
+1. Ensure you are running on Ubuntu (at least 22.04), and that AVX-512 is available on the CPU (you can run `lscpu` and look for the `avx512f` flag).
 Our benchmarks were collected using the AWS `r6i.16xlarge` instance type, which has all necessary CPU features.
 2. Run `sudo apt-get update && sudo apt-get install -y build-essential libssl-dev pkg-config`.
 2. [Install Rust using rustup](https://www.rust-lang.org/tools/install) using `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`.
@@ -45,7 +45,10 @@ Options:
 ```
 
 ### Interpreting measurements
-This is an annotated version of the output, detailing what each measurement means:
+This is an annotated version of the output
+of running `RUST_LOG=debug cargo run --profile release-with-debug --bin server 8589934592 1` 
+(testing on a 1 GB database),
+detailing what each measurement means:
 ```js
 {
   "offline": {
@@ -128,6 +131,7 @@ This is an annotated version of the output, detailing what each measurement mean
 ## Server & Client
 
 You can run YPIR as a standalone HTTP server using a command like:
+
 
 ```sh
 $ RUST_LOG=debug cargo run --profile release-with-debug --bin server 32768 262144 --is-simplepir --inp-file ../passwords-data/hibp-passwords.bin -p 8989 --hint-file ../passwords-data/hibp-passwords-2-hint.bin

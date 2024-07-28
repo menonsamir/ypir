@@ -1,4 +1,8 @@
 # HintlessPIR query + response size calculation
+
+Using Lemma 7 from ["Hintless Single-Server Private Information Retrieval"](https://eprint.iacr.org/2023/1733.pdf), we calculate the query and response sizes for HintlessPIR for the parameters in the implementation at
+https://github.com/google/hintless_pir/commit/4be2ae8.
+
 ```
 Upload = (k + l) (n log q) + db_cols (log Q)
 Download = 2k(db_rows + n) log q + db_rows (log Q)
