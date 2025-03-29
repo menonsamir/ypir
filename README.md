@@ -30,19 +30,25 @@ The full command-line parameters are as follows:
 ```
 Usage: cargo run --release -- [OPTIONS] <NUM_ITEMS> [ITEM_SIZE_BITS] [NUM_CLIENTS] [TRIALS] [OUT_REPORT_JSON]
 
+Run the YPIR scheme with the given parameters
+
 Arguments:
   <NUM_ITEMS>        Number of items in the database
   [ITEM_SIZE_BITS]   Size of each item in bits (optional, default 1), values over 8 are unsupported
   [NUM_CLIENTS]      Number of clients (optional, default 1) to perform cross-client batching over
-  [TRIALS]           Number of trials (optional, default 5) to run the YPIR scheme 
-                     and average performance measurements over (with one additional warmup trial excluded)
+  [TRIALS]           Number of trials (optional, default 5) to run the YPIR scheme and average performance measurements over (a warmup trial is excluded)
   [OUT_REPORT_JSON]  Output report file (optional) where results will be written in JSON
 
 Options:
-  -v, --verbose  Verbose mode (optional) if set, the program will print debug logs to stderr
-  -h, --help     Print help
-  -V, --version  Print version
+  -i, --is-simplepir  Verbose mode (optional) if set, run YPIR+SP instead of standard YPIR
+  -v, --verbose       Verbose mode (optional) if set, the program will print debug logs to stderr
+  -h, --help          Print help
+  -V, --version       Print version
 ```
+
+### Item sizes
+
+Standard YPIR supports item sizes of 1-8 bits. YPIR+SP supports item of size 28672 bits or larger. To run YPIR+SP for a PIR problem for `N` items, where each item is of size `B` bits, and `B < 286721`, compute `N' = N * B / 28672`, and run YPIR+SP on `N'` items of size 28672 bits.
 
 ### Interpreting measurements
 This is an annotated version of the output, detailing what each measurement means:
