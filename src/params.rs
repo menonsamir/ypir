@@ -125,7 +125,7 @@ pub fn params_for_scenario_simplepir(num_items: usize, item_size_bits: usize) ->
 
     debug!("db_rows: {}, db_cols: {}", db_rows, db_cols);
 
-    let nu_1 = db_rows.next_power_of_two().trailing_zeros() as usize - 11;
+    let nu_1 = (db_rows.next_power_of_two().trailing_zeros() as usize).checked_sub(11).unwrap_or(0);
     debug!("chose nu_1: {}", nu_1);
 
     let p = 1 << 14;
