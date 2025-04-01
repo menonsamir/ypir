@@ -18,6 +18,11 @@ pub fn rlwe_to_lwe<'a>(params: &'a Params, ct: &PolyMatrixRaw<'a>) -> Vec<u64> {
     negacylic_a
 }
 
+/// Returns only the last row of the LWE ciphertext (the 'b' scalar).
+pub fn rlwe_to_lwe_last_row<'a>(_params: &'a Params, ct: &PolyMatrixRaw<'a>) -> Vec<u64> {
+    ct.get_poly(1, 0).to_vec()
+}
+
 pub fn pack_query(params: &Params, query: &[u64]) -> AlignedMemory64 {
     let query_packed = query
         .iter()
@@ -176,12 +181,13 @@ impl<'a> YClient<'a> {
         &self.lwe_client
     }
 
+    /// Returns the last row of the LWE ciphertext (the 'b' scalar) for each RLWE ciphertext.
     fn rlwes_to_lwes(&self, ct: &[PolyMatrixRaw<'a>]) -> Vec<u64> {
         let v = ct
             .iter()
-            .map(|ct| rlwe_to_lwe(self.params, ct))
+            .map(|ct| rlwe_to_lwe_last_row(self.params, ct))
             .collect::<Vec<_>>();
-        concat_horizontal(&v, self.params.poly_len + 1, self.params.poly_len)
+        concat_horizontal(&v, 1, self.params.poly_len)
     }
 
     pub fn generate_query_impl(

@@ -165,8 +165,7 @@ pub fn run_simple_ypir_on_params<const K: usize>(params: Params, trials: usize) 
 
             let y_client = YClient::new(client, &params);
             let query_row = y_client.generate_query(SEED_0, params.db_dim_1, true, target_row);
-            assert_eq!(query_row.len(), (params.poly_len + 1) * db_rows);
-            let query_row_last_row: &[u64] = &query_row[params.poly_len * db_rows..];
+            let query_row_last_row: &[u64] = &query_row;
             assert_eq!(query_row_last_row.len(), db_rows);
             let packed_query_row = pack_query(&params, query_row_last_row);
 
@@ -468,7 +467,7 @@ pub fn run_ypir_on_params<const K: usize>(
                 .collect::<Vec<_>>();
 
             let query_col = y_client.generate_query(SEED_1, params.db_dim_2, true, target_col);
-            let query_col_last_row = &query_col[params.poly_len * db_cols..];
+            let query_col_last_row = &query_col;
             let packed_query_col = pack_query(&params, query_col_last_row);
 
             let query_size = query_row_last_row.len() * 4 + query_col_last_row.len() * 8;
